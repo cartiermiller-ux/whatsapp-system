@@ -1,0 +1,14 @@
+# WhatsApp 超链群发系统 —— 后端依赖
+# 安装：pip install -r requirements.txt
+
+fastapi>=0.110
+uvicorn[standard]>=0.29
+sqlalchemy>=2.0
+pydantic>=2.5
+
+# ------------------------------------------------------------
+# 可选：真实发送（wasock 封装了 Baileys，需要本机有 Node.js）
+# 不安装也能跑，群发任务会走 simulate_mass_send 模拟发送。
+# 注意：wasock 自带一份 node_modules，下载体积较大。
+# ------------------------------------------------------------
+# wasock==0.5.2

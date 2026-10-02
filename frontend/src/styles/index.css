@@ -1,0 +1,188 @@
+:root {
+  --wa-bg: #f0f2f5;
+  --wa-sidebar-bg: #1f2d3d;
+  --wa-sidebar-active: #263445;
+  --wa-brand: #25d366;
+  --wa-border: #e4e7ed;
+  --wa-text: #303133;
+  --wa-text-secondary: #606266;
+  --wa-text-muted: #909399;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
+  background: var(--wa-bg);
+  color: var(--wa-text);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* 页面通用容器 */
+.page {
+  padding: 20px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.page-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--wa-text);
+}
+
+.page-header .sub {
+  color: var(--wa-text-muted);
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+/* 筛选栏 */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+/* 卡片：去掉阴影，只保留边框 */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.stat-card {
+  background: #fff;
+  border: 1px solid var(--wa-border);
+  border-radius: 4px;
+  padding: 18px 20px;
+}
+
+.stat-card .label {
+  color: var(--wa-text-muted);
+  font-size: 13px;
+}
+
+.stat-card .value {
+  font-size: 28px;
+  font-weight: 700;
+  margin-top: 8px;
+  line-height: 1.1;
+  color: var(--wa-text);
+}
+
+.stat-card .hint {
+  font-size: 12px;
+  color: #c0c4cc;
+  margin-top: 6px;
+}
+
+/* 通用工具类 */
+.muted {
+  color: var(--wa-text-muted);
+}
+
+.section-gap {
+  margin-top: 16px;
+}
+
+.mono {
+  font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+  font-size: 12px;
+}
+
+/* 占位面板 */
+.placeholder-panel .ph-api code {
+  background: #f4f4f5;
+  padding: 2px 6px;
+  border-radius: 2px;
+  color: #e6a23c;
+  font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+  font-size: 12px;
+}
+
+.placeholder-panel .ph-tip {
+  color: var(--wa-text-muted);
+  font-size: 13px;
+  margin: 8px 0 0;
+}
+
+.placeholder-panel .ph-body {
+  text-align: center;
+}
+
+/* Element Plus 扁平化微调 */
+.el-card {
+  border-radius: 4px;
+  border: 1px solid var(--wa-border);
+  box-shadow: none !important;
+}
+
+.el-button {
+  border-radius: 2px;
+}
+
+.el-input__wrapper,
+.el-select__wrapper {
+  border-radius: 2px;
+  box-shadow: none !important;
+  border: 1px solid var(--wa-border);
+}
+
+.el-table {
+  border-radius: 4px;
+}
+
+.el-dialog {
+  border-radius: 4px;
+}
+
+.el-tag {
+  border-radius: 2px;
+}
+
+/* 侧边栏扁平化 */
+.el-menu {
+  border-right: none !important;
+}
+
+.el-menu-item {
+  border-radius: 0 !important;
+}
+
+/* 滚动条简化 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c0c4cc;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
