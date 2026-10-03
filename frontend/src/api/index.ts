@@ -1,5 +1,7 @@
 import { request } from './request'
 import type {
+  WhatsAppRegisterResult,
+  WhatsAppStatus,
   AccountDetail,
   AccountItem,
   AdCopyQuery,
@@ -434,5 +436,26 @@ export const integrationApi = {
   },
   removePurchaseOrder(id: number) {
     return request<{ deleted: number }>({ url: `/purchase/orders/${id}`, method: 'delete' })
+  },
+}
+
+/** 面板内扫码登录 WhatsApp —— /api/v1/whatsapp/* */
+export const whatsappApi = {
+  status() {
+    return request<WhatsAppStatus>({ url: '/whatsapp/status', method: 'get' })
+  },
+  /** 启动会话（需要时后端会拉起 wasock 的 Node 服务） */
+  start() {
+    return request<WhatsAppStatus>({ url: '/whatsapp/start', method: 'post', timeout: 120000 })
+  },
+  stop() {
+    return request<WhatsAppStatus>({ url: '/whatsapp/stop', method: 'post' })
+  },
+  /** 把扫码登录的号登记进号码池 / 账号池 */
+  registerAccount() {
+    return request<WhatsAppRegisterResult>({
+      url: '/whatsapp/register-account',
+      method: 'post',
+    })
   },
 }

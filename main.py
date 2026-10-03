@@ -2263,6 +2263,13 @@ except Exception as _providers_exc:          # providers 包缺失时其余功�
     PROVIDERS_IMPORT_ERROR = f"{type(_providers_exc).__name__}: {_providers_exc}"
 
 # 没有可用代理时是否要中断注册（默认否：尽力而为，缺代理只记日志）
+try:
+    from whatsapp_session import get_session, is_node_running, read_paired_phone
+    WHATSAPP_SESSION_AVAILABLE = True
+except Exception as _session_exc:              # 缺 wasock 时其余功能照常
+    WHATSAPP_SESSION_AVAILABLE = False
+    WHATSAPP_SESSION_ERROR = f"{type(_session_exc).__name__}: {_session_exc}"
+
 PROXY_REQUIRED = os.environ.get("PROXY_REQUIRED", "false").strip().lower() == "true"
 # 发消息通道：wasock（默认）/ wsapi / mock
 MESSAGE_PROVIDER = os.environ.get("MESSAGE_PROVIDER", "wasock").strip().lower()
@@ -2782,6 +2789,126 @@ def sync_purchase_order(order_id: int, db: Session = Depends(get_db),
     db.commit()
     db.refresh(row)
     return {"code": 0, "data": purchase_order_dict(row)}
+
+
+# ============================================================
+# 面板内扫码登录 WhatsApp
+# ============================================================
+def whatsapp_status_dict(db: Session) -> Dict[str, Any]:
+    """会话状态 + 二维码（data URL）+ 是否已登记到账号池。"""
+    if not WHATSAPP_SESSION_AVAILABLE:
+        return {"status": "unavailable", "qr_image": "", "node_running": False,
+                "registered": False, "paired_phone": "",
+                "hint": f"会话模块不可用：{WHATSAPP_SESSION_ERROR}"}
+    status = get_session().snapshot()
+    phone = read_paired_phone(status.get("auth_name") or "whatsapp_auth")
+    status["paired_phone"] = phone
+    number = db.query(NumberPool).filter_by(phone_number=phone).first() if phone else None
+    account = None
+    if number is not None:
+        account = (db.query(AccountPool).filter_by(id=number.account_id).first()
+                   if number.account_id else None)
+        if account is None:
+            account = db.query(AccountPool).filter_by(number_id=number.id).first()
+    status["number_id"] = number.id if number else None
+    status["account_id"] = account.id if account else None
+    status["registered"] = account is not None
+
+    # 给出下一步该做什么，避免用户对着状态干等
+    if status["status"] == "waiting_qr":
+        status["hint"] = "手机 WhatsApp → 设置 → 已关联的设备 → 关联新设备，扫描二维码"
+    elif status["status"] == "connected":
+        status["hint"] = ("已登录，点「登记到账号池」即可用于群发" if not status["registered"]
+                          else "已登录，且已登记到账号池")
+    elif status["status"] == "starting":
+        status["hint"] = "正在建立会话，稍候…"
+    elif status["status"] in ("error", "closed"):
+        status["hint"] = status.get("last_error") or "会话已断开，可重新点「启动扫码」"
+    elif not status["node_running"]:
+        status["hint"] = "点「启动扫码」开始；若终端里正跑着 connect_whatsapp.py，请先关掉它"
+    else:
+        status["hint"] = status.get("last_error") or "服务已在运行，点「启动扫码」接入"
+    return status
+
+
+@app.get("/api/v1/whatsapp/status")
+def whatsapp_status(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """会话状态。前端轮询这个接口拿二维码与进度。"""
+    return {"code": 0, "data": whatsapp_status_dict(db)}
+
+
+@app.post("/api/v1/whatsapp/start")
+def whatsapp_start(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """启动会话：需要时拉起 Node 服务，然后等待二维码。"""
+    if not WHATSAPP_SESSION_AVAILABLE:
+        raise HTTPException(status_code=503, detail=f"会话模块不可用：{WHATSAPP_SESSION_ERROR}")
+    current = whatsapp_status_dict(db)
+    # 端口被别的东西占着（通常是终端里的 connect_whatsapp.py），提示而不是硬抢
+    if (current["node_running"] and not current.get("node_owned")
+            and current["status"] in ("idle", "error")):
+        current["hint"] = ("127.0.0.1:5000 已被占用，通常是终端里的 connect_whatsapp.py 正在运行。"
+                           "请先关掉它再启动，避免两个会话互相顶掉")
+        return {"code": 0, "data": current}
+    get_session().start()
+    log_operation(db, "whatsapp_start", target="whatsapp", detail="启动扫码会话", user=user)
+    return {"code": 0, "data": whatsapp_status_dict(db)}
+
+
+@app.post("/api/v1/whatsapp/stop")
+def whatsapp_stop(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """断开会话。不删除登录态，下次仍是同一个号。"""
+    if WHATSAPP_SESSION_AVAILABLE:
+        get_session().stop()
+    log_operation(db, "whatsapp_stop", target="whatsapp", detail="断开扫码会话", user=user)
+    return {"code": 0, "data": whatsapp_status_dict(db)}
+
+
+@app.post("/api/v1/whatsapp/register-account")
+def whatsapp_register_account(db: Session = Depends(get_db),
+                              user: User = Depends(require_admin)):
+    """把已扫码登录的号登记进号码池 / 账号池，之后可直接用于群发。"""
+    if not WHATSAPP_SESSION_AVAILABLE:
+        raise HTTPException(status_code=503, detail=f"会话模块不可用：{WHATSAPP_SESSION_ERROR}")
+    phone = read_paired_phone()
+    if not phone:
+        raise HTTPException(status_code=400, detail="还没有完成扫码登录，无法登记")
+
+    number = db.query(NumberPool).filter_by(phone_number=phone).first()
+    if number is None:
+        number = NumberPool(phone_number=phone, source_type="physical",
+                            source_channel="扫码关联", number_segment=phone[:6],
+                            region="", trust_score=80, status="success",
+                            register_time=datetime.now())
+        db.add(number)
+        db.commit()
+        db.refresh(number)
+    else:
+        number.status = "success"
+        if not number.register_time:
+            number.register_time = datetime.now()
+        db.commit()
+
+    account = db.query(AccountPool).filter_by(number_id=number.id).first()
+    if account is None:
+        account = AccountPool(number_id=number.id, device_fingerprint=f"scanned_{number.id}",
+                              current_ip="", nurture_stage="ready", health_score=100,
+                              status="normal")
+        db.add(account)
+        db.commit()
+        db.refresh(account)
+        number.account_id = account.id
+        db.commit()
+    else:
+        account.nurture_stage = "ready"
+        account.status = "normal"
+        db.commit()
+
+    log_operation(db, "whatsapp_register_account", target=phone,
+                  detail=f"扫码登录的号已登记为账号 #{account.id}", user=user)
+    return {"code": 0, "data": {
+        "number_id": number.id, "account_id": account.id, "phone": phone,
+        "message": f"已登记为账号 #{account.id}，可在群发任务里选择",
+    }}
 
 
 @app.delete("/api/v1/purchase/orders/{order_id}")

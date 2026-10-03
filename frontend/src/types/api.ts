@@ -591,3 +591,32 @@ export interface PurchaseOrderRow {
   created_at: string | null
   updated_at: string | null
 }
+
+/* ==================== 面板内扫码登录 WhatsApp ==================== */
+
+/** GET /api/v1/whatsapp/status 返回 data */
+export interface WhatsAppStatus {
+  status: 'idle' | 'starting' | 'waiting_qr' | 'connected' | 'closed' | 'error' | 'unavailable' | string
+  qr_image: string
+  qr_seq: number
+  qr_age_seconds: number | null
+  connected_at: string | null
+  last_error: string
+  node_running: boolean
+  node_owned: boolean
+  auth_name: string
+  paired_phone: string
+  number_id: number | null
+  account_id: number | null
+  registered: boolean
+  hint: string
+  events: { event: string; at: string }[]
+}
+
+/** POST /api/v1/whatsapp/register-account 返回 data */
+export interface WhatsAppRegisterResult {
+  number_id: number
+  account_id: number
+  phone: string
+  message: string
+}

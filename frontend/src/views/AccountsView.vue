@@ -5,7 +5,12 @@
         <h2>账号管理</h2>
         <div class="sub">账号列表 · 状态筛选 · 账号详情</div>
       </div>
-      <el-button :icon="Refresh" :loading="loading" @click="loadAccounts">刷新</el-button>
+      <div class="actions">
+        <el-button type="primary" :icon="Iphone" @click="loginVisible = true">
+          扫码登录 WhatsApp
+        </el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="loadAccounts">刷新</el-button>
+      </div>
     </div>
 
     <el-alert
@@ -141,13 +146,14 @@
         </el-descriptions>
       </div>
     </el-drawer>
+    <WhatsAppLoginDialog v-model="loginVisible" @registered="loadAccounts" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, Search } from '@element-plus/icons-vue'
+import { Iphone, Refresh, Search } from '@element-plus/icons-vue'
 import type { EChartsOption } from 'echarts'
 import { accountApi } from '@/api'
 import type { AccountDetail, AccountItem } from '@/types/api'
@@ -158,8 +164,11 @@ import {
   statusTagType,
 } from '@/utils/format'
 import EChart from '@/components/EChart.vue'
+import WhatsAppLoginDialog from '@/components/WhatsAppLoginDialog.vue'
 
 const loading = ref(false)
+// 扫码登录弹窗（扫到的号会登记进账号池，成功后刷新列表）
+const loginVisible = ref(false)
 const apiError = ref(false)
 const accounts = ref<AccountItem[]>([])
 
