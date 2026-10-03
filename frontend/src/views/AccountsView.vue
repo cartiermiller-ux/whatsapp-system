@@ -268,10 +268,4 @@ async function loadAccounts() {
 onMounted(loadAccounts)
 </script>
 
-<style scoped>
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 14px;
-}
-</style>
+

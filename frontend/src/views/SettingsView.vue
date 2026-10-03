@@ -57,7 +57,7 @@
             </template>
           </el-form>
 
-          <div class="form-actions">
+          <div class="form-actions is-indented">
             <el-button
               type="primary"
               :loading="saving"
@@ -522,36 +522,11 @@ onMounted(loadAll)
   color: #303133;
 }
 
-.field-hint {
-  width: 100%;
-  font-size: 12px;
-  line-height: 1.6;
-  color: #909399;
-}
-
 .text-input {
   max-width: 420px;
 }
 
-.form-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 8px;
-  padding-left: 200px;
-}
-
 .saved-at {
   font-size: 12px;
-}
-
-.filter-bar {
-  margin-bottom: 14px;
-}
-
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 14px;
 }
 </style>

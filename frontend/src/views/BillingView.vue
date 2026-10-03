@@ -448,28 +448,4 @@ async function loadAll() {
 onMounted(loadAll)
 </script>
 
-<style scoped>
-.stat-card-gap {
-  margin-bottom: 16px;
-}
 
-.block-gap {
-  margin-bottom: 16px;
-}
-
-.unit {
-  margin-left: 8px;
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 14px;
-}
-</style>

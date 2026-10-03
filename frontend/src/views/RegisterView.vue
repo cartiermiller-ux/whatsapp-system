@@ -235,12 +235,6 @@ onBeforeUnmount(stopTimer)
 </script>
 
 <style scoped>
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
 .auto-refresh {
   display: flex;
   align-items: center;

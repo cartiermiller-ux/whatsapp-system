@@ -284,16 +284,4 @@ onMounted(async () => {
 })
 </script>
 
-<style scoped>
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
 
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 14px;
-}
-</style>

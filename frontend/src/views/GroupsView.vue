@@ -21,25 +21,25 @@
       </div>
     </div>
 
-    <div class="filter-bar">
-      <el-input
-        v-model="filters.keyword"
-        placeholder="搜索群名称"
-        style="width: 220px"
-        :prefix-icon="Search"
-        clearable
-        @keyup.enter="reload"
-      />
-      <el-select v-model="filters.status" placeholder="状态" style="width: 140px" clearable>
-        <el-option label="活跃" value="active" />
-        <el-option label="停用" value="disabled" />
-      </el-select>
-      <el-button type="primary" :icon="Search" @click="reload">查询</el-button>
-      <el-button @click="resetFilters">重置</el-button>
-      <el-tag type="info" effect="plain">按营销价值分降序</el-tag>
-    </div>
 
     <el-card shadow="never">
+      <div class="filter-bar">
+        <el-input
+          v-model="filters.keyword"
+          placeholder="搜索群名称"
+          style="width: 220px"
+          :prefix-icon="Search"
+          clearable
+          @keyup.enter="reload"
+        />
+        <el-select v-model="filters.status" placeholder="状态" style="width: 140px" clearable>
+          <el-option label="活跃" value="active" />
+          <el-option label="停用" value="disabled" />
+        </el-select>
+        <el-button type="primary" :icon="Search" @click="reload">查询</el-button>
+        <el-button @click="resetFilters">重置</el-button>
+        <el-tag type="info" effect="plain">按营销价值分降序</el-tag>
+      </div>
       <el-table v-loading="loading" :data="rows" stripe @selection-change="onSelectionChange">
         <el-table-column type="selection" width="46" />
         <el-table-column prop="id" label="ID" width="70" />
@@ -207,16 +207,4 @@ function notReady(feature: string) {
 onMounted(load)
 </script>
 
-<style scoped>
-.actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
 
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 14px;
-}
-</style>

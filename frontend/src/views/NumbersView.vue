@@ -20,33 +20,33 @@
       </div>
     </div>
 
-    <div class="filter-bar">
-      <el-input
-        v-model="filters.keyword"
-        placeholder="搜索号码"
-        style="width: 200px"
-        :prefix-icon="Search"
-        clearable
-        @keyup.enter="reload"
-      />
-      <el-select v-model="filters.status" placeholder="号码状态" style="width: 140px" clearable>
-        <el-option
-          v-for="(label, key) in NUMBER_STATUS_LABEL"
-          :key="key"
-          :label="label"
-          :value="key"
-        />
-      </el-select>
-      <el-select v-model="filters.source_type" placeholder="来源类型" style="width: 150px" clearable>
-        <el-option label="实体卡" value="physical" />
-        <el-option label="虚拟号" value="virtual" />
-        <el-option label="接码平台" value="sms_platform" />
-      </el-select>
-      <el-button type="primary" :icon="Search" @click="reload">查询</el-button>
-      <el-button @click="resetFilters">重置</el-button>
-    </div>
 
     <el-card shadow="never">
+      <div class="filter-bar">
+        <el-input
+          v-model="filters.keyword"
+          placeholder="搜索号码"
+          style="width: 200px"
+          :prefix-icon="Search"
+          clearable
+          @keyup.enter="reload"
+        />
+        <el-select v-model="filters.status" placeholder="号码状态" style="width: 140px" clearable>
+          <el-option
+            v-for="(label, key) in NUMBER_STATUS_LABEL"
+            :key="key"
+            :label="label"
+            :value="key"
+          />
+        </el-select>
+        <el-select v-model="filters.source_type" placeholder="来源类型" style="width: 150px" clearable>
+          <el-option label="实体卡" value="physical" />
+          <el-option label="虚拟号" value="virtual" />
+          <el-option label="接码平台" value="sms_platform" />
+        </el-select>
+        <el-button type="primary" :icon="Search" @click="reload">查询</el-button>
+        <el-button @click="resetFilters">重置</el-button>
+      </div>
       <el-table v-loading="loading" :data="rows" stripe @selection-change="onSelectionChange">
         <el-table-column type="selection" width="46" />
         <el-table-column prop="id" label="ID" width="70" />
@@ -312,18 +312,6 @@ onMounted(load)
 </script>
 
 <style scoped>
-.actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 14px;
-}
-
 .import-hint {
   display: flex;
   align-items: center;

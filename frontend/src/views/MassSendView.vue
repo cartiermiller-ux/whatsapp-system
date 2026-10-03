@@ -418,12 +418,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
 .var-row {
   display: flex;
   gap: 8px;
@@ -441,11 +435,5 @@ onBeforeUnmount(() => {
   gap: 10px;
   margin-bottom: 12px;
   font-size: 13px;
-}
-
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 14px;
 }
 </style>

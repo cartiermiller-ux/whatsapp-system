@@ -11,32 +11,33 @@
     <el-tabs v-model="activeTab">
       <!-- ==================== 文案列表 ==================== -->
       <el-tab-pane label="文案列表" name="copy">
-        <div class="filter-bar">
-          <el-select v-model="copyFilters.language" placeholder="语言" style="width: 140px" clearable>
-            <el-option
-              v-for="(label, key) in AD_LANGUAGE_LABEL"
-              :key="key"
-              :label="label"
-              :value="key"
-            />
-          </el-select>
-          <el-select v-model="copyFilters.status" placeholder="状态" style="width: 140px" clearable>
-            <el-option v-for="(label, key) in AD_STATUS_LABEL" :key="key" :label="label" :value="key" />
-          </el-select>
-          <el-input
-            v-model="copyFilters.keyword"
-            placeholder="搜索标题 / 内容"
-            style="width: 220px"
-            :prefix-icon="Search"
-            clearable
-            @keyup.enter="reloadCopies"
-          />
-          <el-button type="primary" :icon="Search" @click="reloadCopies">查询</el-button>
-          <el-button @click="resetCopyFilters">重置</el-button>
-          <el-button type="primary" :icon="Plus" @click="openCopyDialog()">新建文案</el-button>
-        </div>
+
 
         <el-card shadow="never">
+          <div class="filter-bar">
+            <el-select v-model="copyFilters.language" placeholder="语言" style="width: 140px" clearable>
+              <el-option
+                v-for="(label, key) in AD_LANGUAGE_LABEL"
+                :key="key"
+                :label="label"
+                :value="key"
+              />
+            </el-select>
+            <el-select v-model="copyFilters.status" placeholder="状态" style="width: 140px" clearable>
+              <el-option v-for="(label, key) in AD_STATUS_LABEL" :key="key" :label="label" :value="key" />
+            </el-select>
+            <el-input
+              v-model="copyFilters.keyword"
+              placeholder="搜索标题 / 内容"
+              style="width: 220px"
+              :prefix-icon="Search"
+              clearable
+              @keyup.enter="reloadCopies"
+            />
+            <el-button type="primary" :icon="Search" @click="reloadCopies">查询</el-button>
+            <el-button @click="resetCopyFilters">重置</el-button>
+            <el-button type="primary" :icon="Plus" @click="openCopyDialog()">新建文案</el-button>
+          </div>
           <el-table v-loading="copyLoading" :data="copies" stripe>
             <el-table-column prop="id" label="ID" width="70" />
             <el-table-column prop="title" label="标题" min-width="150" show-overflow-tooltip />
@@ -107,6 +108,9 @@
 
       <!-- ==================== 超链管理 ==================== -->
       <el-tab-pane label="超链管理" name="link">
+
+
+        <el-card shadow="never">
         <div class="filter-bar">
           <el-input
             v-model="linkFilters.keyword"
@@ -123,8 +127,6 @@
           <el-button @click="resetLinkFilters">重置</el-button>
           <el-button type="primary" :icon="Plus" @click="openLinkDialog()">新建超链</el-button>
         </div>
-
-        <el-card shadow="never">
           <el-table v-loading="linkLoading" :data="links" stripe>
             <el-table-column prop="id" label="ID" width="70" />
             <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
@@ -199,13 +201,13 @@
           <span class="muted">统计全部文案的累计发送 / 送达 / 阅读 / 点击，比率按发送量计算。</span>
         </div>
 
-        <el-row :gutter="16">
-          <el-col v-for="card in statCards" :key="card.label" :xs="12" :sm="8" :md="6" :lg="3">
-            <div class="stat-card stat-card-gap">
-              <div class="label">{{ card.label }}</div>
-              <div class="value" :style="{ color: card.color }">{{ card.value }}</div>
-              <div class="hint">{{ card.hint }}</div>
-            </div>
+          <el-row :gutter="16">
+            <el-col v-for="card in statCards" :key="card.label" :xs="12" :sm="8" :md="6" :lg="3">
+              <div class="stat-card stat-card-gap">
+                <div class="label">{{ card.label }}</div>
+                <div class="value" :style="{ color: card.color }">{{ card.value }}</div>
+                <div class="hint">{{ card.hint }}</div>
+              </div>
           </el-col>
         </el-row>
 
@@ -852,12 +854,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 14px;
-}
-
 .var-tag {
   margin: 0 4px 4px 0;
 }
@@ -892,15 +888,5 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.stat-card-gap {
-  margin-bottom: 16px;
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
 </style>

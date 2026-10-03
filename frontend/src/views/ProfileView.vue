@@ -75,7 +75,7 @@
             <el-button type="primary" :loading="changingPassword" @click="submitPassword">
               提交
             </el-button>
-            <div class="hint">修改成功后所有登录态会失效，需要使用新密码重新登录。</div>
+            <div class="field-hint">修改成功后所有登录态会失效，需要使用新密码重新登录。</div>
           </el-form>
         </el-card>
 
@@ -276,27 +276,4 @@ async function submitPassword() {
 onMounted(loadAll)
 </script>
 
-<style scoped>
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
 
-.form-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.hint {
-  margin-top: 10px;
-  font-size: 12px;
-  color: #909399;
-}
-
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 14px;
-}
-</style>
