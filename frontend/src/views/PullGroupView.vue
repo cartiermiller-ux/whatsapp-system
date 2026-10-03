@@ -107,7 +107,7 @@
               </template>
             </el-table-column>
             <template #empty>
-              <el-empty description="暂无拉群任务" />
+              <el-empty description="暂无拉群任务，点上方「创建拉群任务」发起" />
             </template>
           </el-table>
           <div class="pager">

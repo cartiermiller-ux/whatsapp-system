@@ -122,7 +122,7 @@
           </template>
         </el-table-column>
         <template #empty>
-          <el-empty description="暂无充值订单" />
+          <el-empty description="暂无充值订单，点上方「创建充值订单」发起" />
         </template>
       </el-table>
 
@@ -201,7 +201,7 @@
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
         <template #empty>
-          <el-empty description="暂无流水记录" />
+          <el-empty description="暂无流水记录，充值到账或产生消费后会自动记账" />
         </template>
       </el-table>
 

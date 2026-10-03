@@ -98,7 +98,7 @@
           </template>
         </el-table-column>
         <template #empty>
-          <el-empty description="暂无资源群数据" />
+          <el-empty description="暂无资源群，可先用「批量获取群链接」或从已加入的群里采集" />
         </template>
       </el-table>
 

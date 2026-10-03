@@ -250,7 +250,7 @@
               <template #default="{ row }">{{ rateText(row.click_rate) }}</template>
             </el-table-column>
             <template #empty>
-              <el-empty description="暂无统计数据" />
+              <el-empty description="暂无统计数据，文案被发送后这里会显示送达 / 阅读 / 点击漏斗" />
             </template>
           </el-table>
         </el-card>

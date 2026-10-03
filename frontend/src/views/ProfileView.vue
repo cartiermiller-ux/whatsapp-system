@@ -109,7 +109,7 @@
         </el-table-column>
         <el-table-column prop="detail" label="详情" min-width="200" show-overflow-tooltip />
         <template #empty>
-          <el-empty description="暂无操作日志" />
+          <el-empty description="暂无操作日志，登录、改密、保存参数等操作都会记录在这里" />
         </template>
       </el-table>
       <div class="pager">

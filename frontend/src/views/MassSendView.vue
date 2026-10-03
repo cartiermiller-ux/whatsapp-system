@@ -149,7 +149,7 @@
               </template>
             </el-table-column>
             <template #empty>
-              <el-empty description="暂无任务，请在左侧创建" />
+              <el-empty description="暂无任务，在左侧填写表单创建第一个群发任务" />
             </template>
           </el-table>
 

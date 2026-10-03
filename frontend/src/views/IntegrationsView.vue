@@ -219,7 +219,7 @@
               </template>
             </el-table-column>
             <template #empty>
-              <el-empty description="还没有取号记录" />
+              <el-empty description="还没有取号记录，点上方「取号」从接码平台获取号码" />
             </template>
           </el-table>
           <div class="pager">
@@ -262,7 +262,7 @@
               </template>
             </el-table-column>
             <template #empty>
-              <el-empty description="供应商没有返回商品" />
+              <el-empty description="供应商没有返回商品，请检查 ACCOUNT_API_BASE 配置或供应商库存" />
             </template>
           </el-table>
         </el-card>
@@ -329,7 +329,7 @@
                 </template>
               </el-table-column>
               <template #empty>
-                <el-empty description="还没有采购订单" />
+                <el-empty description="还没有采购订单，从上方商品列表点「采购」下单" />
               </template>
             </el-table>
             <div class="pager">

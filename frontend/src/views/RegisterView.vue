@@ -88,7 +88,13 @@
             <b>{{ successRate }}%</b>
           </div>
 
-          <el-table :data="status.details" size="small" max-height="320" class="section-gap">
+          <el-table
+            v-loading="loading"
+            :data="status.details"
+            size="small"
+            max-height="320"
+            class="section-gap"
+          >
             <el-table-column prop="id" label="ID" width="80" />
             <el-table-column prop="phone" label="号码" min-width="140" />
             <el-table-column label="状态" width="110">
@@ -110,7 +116,7 @@
           <span class="muted">共 {{ analysis.total }} 个失败号码</span>
         </div>
       </template>
-      <el-table :data="analysis.details" size="small" max-height="320">
+      <el-table v-loading="loading" :data="analysis.details" size="small" max-height="320">
         <el-table-column prop="id" label="号码 ID" width="90" />
         <el-table-column prop="phone" label="号码" min-width="150" />
         <el-table-column label="来源" width="120">
@@ -120,7 +126,7 @@
         </el-table-column>
         <el-table-column prop="source_channel" label="来源渠道" min-width="120" />
         <template #empty>
-          <el-empty description="暂无注册失败号码" />
+          <el-empty description="暂无注册失败号码，说明这一轮注册没有失败记录" />
         </template>
       </el-table>
       <el-alert

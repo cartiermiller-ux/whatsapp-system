@@ -150,7 +150,7 @@
                 </template>
               </el-table-column>
               <template #empty>
-                <el-empty description="暂无用户" />
+                <el-empty description="暂无用户，点上方「新建用户」添加" />
               </template>
             </el-table>
 
