@@ -1,12 +1,65 @@
+/* ============================================================
+   全局样式与排版规范
+   ------------------------------------------------------------
+   【页面骨架】所有业务页面按这个顺序组织，不要各写各的：
+
+     .page                       页面容器（内边距 20px）
+       .page-header              标题行
+         h2 + .sub               标题 + 副标题
+         .actions                右侧操作区（两个以上按钮时用）
+       .filter-bar               查询条件行（放在卡片外面、卡片上方）
+       .el-card                  内容卡片
+         .card-header            卡片标题行（左标题 / 右统计，可选）
+         .pager                  分页，固定右对齐（可选）
+       .section-gap              区块之间的间距
+
+   【间距】只用 --wa-space-* 这套 4 的倍数，不要出现 10px / 14px 这类随手值。
+   【字号】只用 --wa-font-*，正文 14px / 次要 13px / 辅助 12px。
+   【类名约定】
+     .field-hint   表单字段下方的说明文字（不是 .stat-card 里的 .hint）
+     .actions      按钮组
+     .form-actions 表单底部按钮行，对齐表单项时加 .is-indented
+   ============================================================ */
+
 :root {
-  --wa-bg: #f0f2f5;
+  /* ---------- 皮肤 ----------
+     图案来自 src/assets/skin-banner.png（1920x390 的浅色线性图标纹理）。
+     图片 93% 的像素是 #eef0f2，铺底颜色与它完全一致，所以纵向平铺看不出接缝。
+     想换皮肤只要替换这个文件、并把 --wa-skin-base 改成图片的底色即可。 */
+  --wa-skin-image: url('../assets/skin-banner.png');
+  --wa-skin-base: #eef0f2;
+
+  /* ---------- 颜色 ---------- */
+  --wa-bg: var(--wa-skin-base);
   --wa-sidebar-bg: #1f2d3d;
   --wa-sidebar-active: #263445;
   --wa-brand: #25d366;
+  --wa-primary: #409eff;
+  --wa-success: #25d366;
+  --wa-warning: #e6a23c;
+  --wa-danger: #f56c6c;
   --wa-border: #e4e7ed;
   --wa-text: #303133;
   --wa-text-secondary: #606266;
   --wa-text-muted: #909399;
+  --wa-text-placeholder: #c0c4cc;
+
+  /* ---------- 间距（统一 4 的倍数） ---------- */
+  --wa-space-1: 4px;
+  --wa-space-2: 8px;
+  --wa-space-3: 12px;
+  --wa-space-4: 16px;
+  --wa-space-5: 20px;
+
+  /* ---------- 字号 ---------- */
+  --wa-font-xs: 12px;
+  --wa-font-sm: 13px;
+  --wa-font-base: 14px;
+  --wa-font-title: 18px;
+
+  /* ---------- 圆角 ---------- */
+  --wa-radius-sm: 2px;
+  --wa-radius: 4px;
 }
 
 * {
@@ -26,141 +79,233 @@ body {
     'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
   background: var(--wa-bg);
   color: var(--wa-text);
-  font-size: 14px;
+  font-size: var(--wa-font-base);
   line-height: 1.6;
 }
 
-/* 页面通用容器 */
+/* ============================================================
+   皮肤铺面：底色 + 纹理，纵向平铺且始终从顶部开始
+   ============================================================ */
+.skin-surface {
+  background-color: var(--wa-skin-base);
+  background-image: var(--wa-skin-image);
+  background-repeat: repeat-y;
+  background-position: top center;
+  background-size: 100% auto;
+}
+
+/* ============================================================
+   页面骨架
+   ============================================================ */
 .page {
-  padding: 20px;
+  padding: var(--wa-space-5);
 }
 
 .page-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
-  gap: 12px;
+  gap: var(--wa-space-3);
   flex-wrap: wrap;
+  margin-bottom: var(--wa-space-4);
 }
 
 .page-header h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--wa-font-title);
   font-weight: 600;
   color: var(--wa-text);
 }
 
 .page-header .sub {
+  margin-top: var(--wa-space-1);
+  font-size: var(--wa-font-sm);
   color: var(--wa-text-muted);
-  font-size: 13px;
-  margin-top: 4px;
 }
 
-/* 筛选栏 */
+/* 标题行右侧的操作区：按钮多时用它包一层，自动换行 */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wa-space-2);
+}
+
+/* 查询条件行：放在卡片外面、紧贴卡片上方 */
 .filter-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
   align-items: center;
-  margin-bottom: 16px;
+  gap: var(--wa-space-3);
+  margin-bottom: var(--wa-space-4);
 }
 
-/* 卡片：去掉阴影，只保留边框 */
+/* 卡片标题行：左标题、右统计 */
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* 分页：统一右对齐 */
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--wa-space-4);
+}
+
+/* 区块间距 */
+.section-gap {
+  margin-top: var(--wa-space-4);
+}
+
+.block-gap {
+  margin-bottom: var(--wa-space-4);
+}
+
+/* ============================================================
+   统计卡片
+   ============================================================ */
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
+  gap: var(--wa-space-4);
 }
 
 .stat-card {
   background: #fff;
   border: 1px solid var(--wa-border);
-  border-radius: 4px;
-  padding: 18px 20px;
+  border-radius: var(--wa-radius);
+  padding: 18px var(--wa-space-5);
 }
 
 .stat-card .label {
   color: var(--wa-text-muted);
-  font-size: 13px;
+  font-size: var(--wa-font-sm);
 }
 
 .stat-card .value {
+  margin-top: var(--wa-space-2);
   font-size: 28px;
   font-weight: 700;
-  margin-top: 8px;
   line-height: 1.1;
   color: var(--wa-text);
 }
 
 .stat-card .hint {
-  font-size: 12px;
-  color: #c0c4cc;
   margin-top: 6px;
+  font-size: var(--wa-font-xs);
+  color: var(--wa-text-placeholder);
 }
 
-/* 通用工具类 */
+/* 用 el-row/el-col 排统计卡时，给列加这个类保持行距 */
+.stat-card-gap {
+  margin-bottom: var(--wa-space-4);
+}
+
+/* ============================================================
+   表单
+   ============================================================ */
+/* 字段说明文字（表单里用这个，不要用 .hint，那个是统计卡的） */
+.field-hint {
+  width: 100%;
+  margin-top: var(--wa-space-2);
+  font-size: var(--wa-font-xs);
+  line-height: 1.7;
+  color: var(--wa-text-muted);
+}
+
+/* 表单底部按钮行；需要和表单项左对齐时加 .is-indented 并配合 label-width */
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--wa-space-2);
+  margin-top: var(--wa-space-2);
+}
+
+.form-actions.is-indented {
+  padding-left: 200px;
+}
+
+/* ============================================================
+   通用工具类
+   ============================================================ */
 .muted {
   color: var(--wa-text-muted);
 }
 
-.section-gap {
-  margin-top: 16px;
+/* 跟在输入框/按钮后面的单位或说明 */
+.unit {
+  margin-left: var(--wa-space-2);
 }
 
-.mono {
+/* 并排的标签之间留一点缝 */
+.tag-gap {
+  margin-left: 6px;
+}
+
+.mono,
+.code {
   font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
-  font-size: 12px;
+  font-size: var(--wa-font-xs);
 }
 
-/* 占位面板 */
+.code {
+  font-weight: 600;
+  color: var(--wa-brand);
+}
+
+/* ============================================================
+   占位面板
+   ============================================================ */
 .placeholder-panel .ph-api code {
   background: #f4f4f5;
   padding: 2px 6px;
-  border-radius: 2px;
-  color: #e6a23c;
+  border-radius: var(--wa-radius-sm);
+  color: var(--wa-warning);
   font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
-  font-size: 12px;
+  font-size: var(--wa-font-xs);
 }
 
 .placeholder-panel .ph-tip {
   color: var(--wa-text-muted);
-  font-size: 13px;
-  margin: 8px 0 0;
+  font-size: var(--wa-font-sm);
+  margin: var(--wa-space-2) 0 0;
 }
 
 .placeholder-panel .ph-body {
   text-align: center;
 }
 
-/* Element Plus 扁平化微调 */
+/* ============================================================
+   Element Plus 扁平化统一微调
+   ============================================================ */
 .el-card {
-  border-radius: 4px;
+  border-radius: var(--wa-radius);
   border: 1px solid var(--wa-border);
   box-shadow: none !important;
 }
 
 .el-button {
-  border-radius: 2px;
+  border-radius: var(--wa-radius-sm);
 }
 
 .el-input__wrapper,
 .el-select__wrapper {
-  border-radius: 2px;
+  border-radius: var(--wa-radius-sm);
   box-shadow: none !important;
   border: 1px solid var(--wa-border);
 }
 
 .el-table {
-  border-radius: 4px;
+  border-radius: var(--wa-radius);
 }
 
 .el-dialog {
-  border-radius: 4px;
+  border-radius: var(--wa-radius);
 }
 
 .el-tag {
-  border-radius: 2px;
+  border-radius: var(--wa-radius-sm);
 }
 
 /* 侧边栏扁平化 */
@@ -172,15 +317,17 @@ body {
   border-radius: 0 !important;
 }
 
-/* 滚动条简化 */
+/* ============================================================
+   滚动条简化
+   ============================================================ */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c0c4cc;
-  border-radius: 4px;
+  background: var(--wa-text-placeholder);
+  border-radius: var(--wa-radius);
 }
 
 ::-webkit-scrollbar-track {

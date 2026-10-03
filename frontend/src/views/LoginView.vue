@@ -106,15 +106,22 @@ function onForgot() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #1f2d3d 0%, #12222f 55%, #0d1b24 100%);
+  /* 与后台一致：皮肤底色 + 纹理平铺 */
+  background-color: var(--wa-skin-base);
+  background-image: var(--wa-skin-image);
+  background-repeat: repeat-y;
+  background-position: top center;
+  background-size: 100% auto;
 }
 
 .login-card {
   width: 400px;
-  background: #fff;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(2px);
+  border: 1px solid rgba(31, 45, 61, 0.06);
   border-radius: 14px;
   padding: 36px 32px 28px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 12px 40px rgba(31, 45, 61, 0.12);
 }
 
 .brand {
@@ -125,6 +132,8 @@ function onForgot() {
 .brand h1 {
   margin: 10px 0 4px;
   font-size: 20px;
+  color: var(--wa-text);
+  letter-spacing: 0.5px;
 }
 
 .brand p {

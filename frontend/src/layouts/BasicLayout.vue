@@ -105,6 +105,7 @@ const menuItems: MenuItem[] = [
   { path: '/groups', title: '资源群管理', icon: 'ChatDotRound' },
   { path: '/mass-send', title: '群发任务', icon: 'Promotion' },
   { path: '/pull-group', title: '拉群任务', icon: 'Connection' },
+  { path: '/integrations', title: '资源对接', icon: 'Link' },
   { path: '/ads', title: '广告消息管理', icon: 'Document' },
   { path: '/billing', title: '余额与计费', icon: 'Wallet' },
   { path: '/profile', title: '个人中心', icon: 'User' },
@@ -208,7 +209,12 @@ async function onCommand(command: string) {
 }
 
 .layout-main {
-  background: var(--wa-bg);
+  /* 皮肤纹理：background-attachment 默认 scroll，滚动时纹理固定不随内容移动 */
+  background-color: var(--wa-skin-base);
+  background-image: var(--wa-skin-image);
+  background-repeat: repeat-y;
+  background-position: top center;
+  background-size: 100% auto;
   padding: 0;
   overflow-y: auto;
 }
