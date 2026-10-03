@@ -2,7 +2,7 @@
   <el-card shadow="never" class="placeholder-panel">
     <el-empty :description="description">
       <template #image>
-        <el-icon :size="72" color="#c0c4cc"><Tools /></el-icon>
+        <el-icon :size="72" color="#a3a3a3"><Tools /></el-icon>
       </template>
       <div class="ph-body">
         <el-tag type="info" effect="plain">待接入后端接口</el-tag>

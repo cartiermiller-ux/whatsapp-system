@@ -8,7 +8,7 @@
       <el-button :icon="Refresh" :loading="loading" @click="loadStatus">刷新状态</el-button>
     </div>
 
-    <el-row :gutter="16">
+    <el-row :gutter="16" class="card-row">
       <!-- 批量注册 -->
       <el-col :xs="24" :md="9">
         <el-card shadow="never">
@@ -47,7 +47,7 @@
 
       <!-- 注册状态 -->
       <el-col :xs="24" :md="15">
-        <el-card shadow="never">
+        <el-card shadow="never" class="register-status-card">
           <template #header>
             <div class="card-header">
               <span>注册状态（GET /api/v1/register/status）</span>
@@ -65,15 +65,15 @@
             </div>
             <div class="stat-card">
               <div class="label">注册成功</div>
-              <div class="value" style="color:#25d366">{{ status.success }}</div>
+              <div class="value" style="color:#303030">{{ status.success }}</div>
             </div>
             <div class="stat-card">
               <div class="label">注册失败</div>
-              <div class="value" style="color:#f56c6c">{{ status.failed }}</div>
+              <div class="value" style="color:#b42318">{{ status.failed }}</div>
             </div>
             <div class="stat-card">
               <div class="label">待注册</div>
-              <div class="value" style="color:#e6a23c">{{ status.pending }}</div>
+              <div class="value" style="color:#a16207">{{ status.pending }}</div>
             </div>
           </div>
 
@@ -82,7 +82,7 @@
             <el-progress
               :percentage="successRate"
               :stroke-width="14"
-              :color="successRate >= 70 ? '#25d366' : '#e6a23c'"
+              :color="successRate >= 70 ? '#303030' : '#a16207'"
               style="flex: 1"
             />
             <b>{{ successRate }}%</b>

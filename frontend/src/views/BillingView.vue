@@ -9,36 +9,36 @@
     </div>
 
     <!-- 余额概览 -->
-    <el-row :gutter="16">
-      <el-col :xs="12" :md="6">
-        <div class="stat-card stat-card-gap">
+    <div class="stat-grid">
+      <div>
+        <div class="stat-card">
           <div class="label">当前余额（{{ balance.currency }}）</div>
-          <div class="value" style="color: #25d366">{{ balance.balance }}</div>
+          <div class="value" style="color: #303030">{{ balance.balance }}</div>
           <div class="hint">更新于 {{ formatDateTime(balance.updated_at) }}</div>
         </div>
-      </el-col>
-      <el-col :xs="12" :md="6">
-        <div class="stat-card stat-card-gap">
+      </div>
+      <div>
+        <div class="stat-card">
           <div class="label">累计充值</div>
-          <div class="value" style="color: #409eff">{{ balance.total_recharge }}</div>
+          <div class="value" style="color: #737373">{{ balance.total_recharge }}</div>
           <div class="hint">单位 {{ balance.currency }}</div>
         </div>
-      </el-col>
-      <el-col :xs="12" :md="6">
-        <div class="stat-card stat-card-gap">
+      </div>
+      <div>
+        <div class="stat-card">
           <div class="label">累计消费</div>
-          <div class="value" style="color: #e6a23c">{{ balance.total_consume }}</div>
+          <div class="value" style="color: #a16207">{{ balance.total_consume }}</div>
           <div class="hint">单位 {{ balance.currency }}</div>
         </div>
-      </el-col>
-      <el-col :xs="12" :md="6">
-        <div class="stat-card stat-card-gap">
+      </div>
+      <div>
+        <div class="stat-card">
           <div class="label">待支付订单</div>
-          <div class="value" style="color: #f56c6c">{{ balance.pending_orders }}</div>
+          <div class="value" style="color: #b42318">{{ balance.pending_orders }}</div>
           <div class="hint">未到账的充值订单</div>
         </div>
-      </el-col>
-    </el-row>
+      </div>
+    </div>
 
     <!-- 充值 -->
     <el-card shadow="never" class="section-gap">
@@ -65,10 +65,10 @@
           <span class="muted unit">{{ currency }}</span>
         </el-form-item>
         <el-form-item label="收款地址">
-          <el-input :model-value="address" readonly placeholder="未配置，请先在系统设置中填写" />
-          <el-button class="unit" :icon="CopyDocument" :disabled="!address" @click="copyAddress">
-            复制
-          </el-button>
+          <div class="address-field">
+            <el-input :model-value="address" readonly placeholder="未配置，请先在系统设置中填写" />
+            <el-button :icon="CopyDocument" :disabled="!address" @click="copyAddress">复制</el-button>
+          </div>
         </el-form-item>
         <el-form-item label="链">
           <el-input :model-value="chain" readonly placeholder="未配置" />
@@ -181,7 +181,7 @@
         </el-table-column>
         <el-table-column label="金额" width="130">
           <template #default="{ row }">
-            <span :style="{ color: row.amount < 0 ? '#f56c6c' : '#25d366' }">
+            <span :style="{ color: row.amount < 0 ? '#b42318' : '#303030' }">
               {{ row.amount }} {{ row.currency }}
             </span>
           </template>
@@ -449,3 +449,8 @@ onMounted(loadAll)
 </script>
 
 
+
+<style scoped>
+.address-field { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; }
+.address-field :deep(.el-input) { flex: 1; min-width: 0; }
+</style>

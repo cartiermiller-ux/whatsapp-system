@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div class="page dashboard-page">
     <div class="page-header">
       <div>
         <h2>数据看板</h2>
@@ -26,8 +26,9 @@
       </template>
     </el-alert>
 
+    <div class="dashboard-grid">
     <!-- ① 今日概览（核心 KPI，一级信息） -->
-    <el-card shadow="never" class="block" v-loading="loading">
+    <el-card shadow="never" class="overview-card" v-loading="loading">
       <template #header>
         <div class="card-header">
           <span>今日概览</span>
@@ -69,7 +70,7 @@
     </el-card>
 
     <!-- ② 快捷操作（主 CTA 固定在第二位，颜色唯一） -->
-    <el-card shadow="never" class="block">
+    <el-card shadow="never" class="quick-card">
       <template #header>快捷操作</template>
       <div class="quick-actions">
         <el-button type="primary" :icon="Promotion" @click="go('/mass-send')">新建群发</el-button>
@@ -80,7 +81,7 @@
     </el-card>
 
     <!-- ③ 通道状态 -->
-    <el-card shadow="never" class="block">
+    <el-card shadow="never" class="channels-card">
       <template #header>
         <div class="card-header">
           <span>通道状态</span>
@@ -90,15 +91,17 @@
       <div class="channel-grid">
         <div v-for="item in providers" :key="item.kind" class="channel">
           <span class="dot" :class="item.configured ? 'dot-ok' : 'dot-warn'"></span>
-          <span class="channel-name">{{ PROVIDER_KIND_LABEL[item.kind] || item.kind }}</span>
-          <span class="channel-meta muted">{{ item.mock ? '模拟' : item.name }}</span>
+          <div class="channel-copy">
+            <span class="channel-name">{{ PROVIDER_KIND_LABEL[item.kind] || item.kind }}</span>
+            <span class="channel-meta muted">{{ item.mock ? '模拟' : item.name }}</span>
+          </div>
         </div>
         <div v-if="!providers.length" class="channel muted">未获取到通道状态</div>
       </div>
     </el-card>
 
     <!-- ④ 任务列表 -->
-    <el-card shadow="never" class="block">
+    <el-card shadow="never" class="tasks-card">
       <template #header>
         <div class="card-header">
           <span>{{ activeTasks.length ? '进行中任务' : '最近任务' }}</span>
@@ -143,18 +146,21 @@
     </el-card>
 
     <!-- ⑤ 账号健康度：低频信息，折叠收起，不占首屏 -->
-    <el-collapse class="block collapse-block">
+    <el-collapse class="collapse-block">
       <el-collapse-item name="health">
         <template #title>
+          <div class="health-heading">
           <span class="collapse-title">账号健康度</span>
           <span class="muted collapse-meta">
             共 {{ accounts.total }} 个 · 正常 {{ accounts.normal }} · 观察 {{ accounts.watch }} ·
             暂停 {{ accounts.paused }} · 已封 {{ accounts.banned }}
           </span>
+          </div>
         </template>
         <EChart :option="healthChartOption" :height="240" />
       </el-collapse-item>
     </el-collapse>
+    </div>
   </div>
 </template>
 
@@ -203,7 +209,7 @@ const taskRows = computed(() =>
   activeTasks.value.length ? activeTasks.value : recentTasks.value,
 )
 
-/* 颜色只表达含义，不做装饰：绿=好、橙=需留意、红=需处理，其余用中性色 */
+/* 颜色只表达含义，不做装饰：灰=正常、橙=需留意、红=需处理，其余用中性色 */
 const successTone = computed(() => {
   if (!today.value.sent) return ''
   if (today.value.success_rate >= 95) return 'tone-success'
@@ -258,7 +264,7 @@ const healthChartOption = computed<EChartsOption>(() => {
         type: 'bar',
         barWidth: '45%',
         data: entries.map((e) => e[1]),
-        itemStyle: { color: '#25d366', borderRadius: [4, 4, 0, 0] },
+        itemStyle: { color: '#303030', borderRadius: [4, 4, 0, 0] },
         label: { show: true, position: 'top' },
       },
     ],
@@ -296,176 +302,46 @@ onMounted(load)
 </script>
 
 <style scoped>
-/* 区块之间统一 16px，与全局 --wa-space-4 一致 */
-.block {
-  margin-top: var(--wa-space-4);
+.dashboard-page { container: dashboard / inline-size; }
+.dashboard-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.dashboard-grid > * { min-width: 0; margin: 0; }
+.kpi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.kpi { min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid var(--wa-border); border-radius: 8px; background: var(--wa-sidebar-bg); overflow-wrap: anywhere; }
+.kpi-label { font-size: var(--wa-font-sm); color: var(--wa-text-muted); }
+.kpi-value { font-size: 24px; font-weight: 600; line-height: 1.2; color: var(--wa-text); font-variant-numeric: tabular-nums; }
+.kpi-trend { font-size: 12px; line-height: 1.5; }
+.kpi-trend-flat, .kpi-hint { color: var(--wa-text-muted); }
+.kpi-hint { margin-top: auto; font-size: 12px; }
+.kpi-foot { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--wa-border); font-size: 12px; overflow-wrap: anywhere; }
+.tone-success { color: var(--wa-brand); }
+.tone-warning { color: var(--wa-warning); }
+.tone-danger { color: var(--wa-danger); }
+.quick-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.quick-actions :deep(.el-button) { width: 100%; min-width: 0; margin: 0; height: 36px; padding: 8px; }
+.channel-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.channel { min-width: 0; display: flex; align-items: flex-start; gap: 8px; font-size: 13px; }
+.channel-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.dot { width: 6px; height: 6px; margin-top: 6px; border-radius: 50%; flex: none; }
+.dot-ok { background: var(--wa-brand); }
+.dot-warn { background: var(--wa-warning); }
+.channel-name { color: var(--wa-text); }
+.channel-meta { font-size: 12px; }
+.progress-cell { display: flex; align-items: center; gap: 8px; }
+.progress-cell :deep(.el-progress) { flex: 1; min-width: 0; }
+.progress-cell > span { flex-shrink: 0; }
+.collapse-block { border: 1px solid var(--wa-border); border-radius: var(--wa-radius); background: var(--wa-surface); padding: 0 16px; }
+.collapse-block :deep(.el-collapse-item__header) { height: auto; min-height: 44px; line-height: 1.5; padding: 10px 0; }
+.health-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; min-width: 0; padding-right: 8px; }
+.collapse-title { font-weight: 600; color: var(--wa-text); }
+.collapse-meta { font-size: 12px; overflow-wrap: anywhere; }
+.error-body { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+@container dashboard (min-width: 640px) { .kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@container dashboard (min-width: 850px) {
+  .dashboard-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .overview-card, .tasks-card, .collapse-block { grid-column: 1 / -1; }
 }
-
-/* ① KPI：统一栅格，四列等高；窄屏退化为两列，不横向挤压 */
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--wa-space-4);
+@container dashboard (max-width: 260px) {
+  .kpi-grid, .quick-actions { grid-template-columns: minmax(0, 1fr); }
 }
-
-@media (max-width: 900px) {
-  .kpi-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.kpi {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding-left: var(--wa-space-3);
-  border-left: 2px solid var(--wa-border);
-}
-
-.kpi-label {
-  font-size: var(--wa-font-sm);
-  color: var(--wa-text-muted);
-}
-
-/* 一级信息：大字号高对比 */
-.kpi-value {
-  font-size: 28px;
-  font-weight: 700;
-  line-height: 1.2;
-  color: var(--wa-text);
-}
-
-/* 二级信息：趋势/对比，中等字号 + 辅助色 */
-.kpi-trend {
-  font-size: var(--wa-font-sm);
-  line-height: 1.4;
-}
-
-.kpi-trend-flat {
-  color: var(--wa-text-muted);
-}
-
-/* 三级信息：说明/时间，小字号弱化色 */
-.kpi-hint {
-  font-size: var(--wa-font-xs);
-  color: var(--wa-text-placeholder);
-}
-
-.kpi-foot {
-  margin-top: var(--wa-space-4);
-  padding-top: var(--wa-space-3);
-  border-top: 1px solid var(--wa-border);
-  font-size: var(--wa-font-xs);
-}
-
-.tone-success {
-  color: var(--wa-brand);
-}
-
-.tone-warning {
-  color: var(--wa-warning);
-}
-
-.tone-danger {
-  color: var(--wa-danger);
-}
-
-/* ② 快捷操作：按钮等高等宽，窄屏整行堆叠 */
-.quick-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--wa-space-3);
-}
-
-.quick-actions :deep(.el-button + .el-button) {
-  margin-left: 0;
-}
-
-@media (max-width: 560px) {
-  .quick-actions :deep(.el-button) {
-    flex: 1 1 100%;
-  }
-}
-
-/* ③ 通道状态：小圆点 + 名称 + 来源 */
-.channel-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--wa-space-3);
-}
-
-@media (max-width: 900px) {
-  .channel-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.channel {
-  display: flex;
-  align-items: center;
-  gap: var(--wa-space-2);
-  font-size: var(--wa-font-sm);
-}
-
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex: none;
-}
-
-.dot-ok {
-  background: var(--wa-brand);
-}
-
-.dot-warn {
-  background: var(--wa-warning);
-}
-
-.channel-name {
-  color: var(--wa-text);
-}
-
-.channel-meta {
-  font-size: var(--wa-font-xs);
-}
-
-/* ④ 任务进度 */
-.progress-cell {
-  display: flex;
-  align-items: center;
-  gap: var(--wa-space-2);
-}
-
-.progress-cell :deep(.el-progress) {
-  flex: 1;
-}
-
-/* ⑤ 折叠区 */
-.collapse-block {
-  border: 1px solid var(--wa-border);
-  border-radius: var(--wa-radius);
-  background: #fff;
-  padding: 0 var(--wa-space-5);
-}
-
-.collapse-block :deep(.el-collapse) {
-  border: none;
-}
-
-.collapse-title {
-  font-weight: 600;
-  color: var(--wa-text);
-}
-
-.collapse-meta {
-  margin-left: var(--wa-space-3);
-  font-size: var(--wa-font-xs);
-}
-
-.error-body {
-  display: flex;
-  align-items: center;
-  gap: var(--wa-space-3);
-}
+@container dashboard (max-width: 420px) { .channel-grid { grid-template-columns: minmax(0, 1fr); } }
 </style>

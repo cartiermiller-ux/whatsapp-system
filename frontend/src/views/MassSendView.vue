@@ -8,7 +8,7 @@
       <el-button :icon="Refresh" :loading="loading" @click="loadTasks">刷新</el-button>
     </div>
 
-    <el-row :gutter="16">
+    <el-row :gutter="16" class="card-row">
       <!-- 创建任务 -->
       <el-col :xs="24" :md="10">
         <el-card shadow="never">
@@ -198,7 +198,7 @@
               :percentage="pct(currentDelivered, currentSent)"
               :show-text="false"
               :stroke-width="14"
-              color="#25d366"
+              color="#303030"
             />
             <b>{{ currentDelivered }}</b>
           </div>
@@ -208,7 +208,7 @@
               :percentage="pct(currentRead, currentSent)"
               :show-text="false"
               :stroke-width="14"
-              color="#e6a23c"
+              color="#a16207"
             />
             <b>{{ currentRead }}</b>
           </div>

@@ -318,6 +318,6 @@ onMounted(load)
   gap: 10px;
   margin-top: 6px;
   font-size: 13px;
-  color: #909399;
+  color: #737373;
 }
 </style>

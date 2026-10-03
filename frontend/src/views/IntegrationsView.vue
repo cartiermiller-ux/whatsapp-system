@@ -19,7 +19,7 @@
           :title="`providers 包不可用：${status.error || '未知原因'}`"
         />
         <template v-else>
-          <el-row :gutter="16">
+          <el-row :gutter="16" class="card-row">
             <el-col v-for="item in providers" :key="item.kind" :xs="24" :md="12">
               <el-card shadow="never" class="provider-card">
                 <template #header>
@@ -830,7 +830,7 @@ onMounted(loadAll)
 
 <style scoped>
 .provider-card {
-  margin-bottom: 16px;
+  height: 100%;
 }
 
 .card-actions {

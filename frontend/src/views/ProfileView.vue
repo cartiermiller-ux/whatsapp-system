@@ -8,7 +8,7 @@
       <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
     </div>
 
-    <el-row :gutter="16">
+    <el-row :gutter="16" class="card-row">
       <el-col :xs="24" :md="10">
         <el-card shadow="never" v-loading="loading">
           <template #header>

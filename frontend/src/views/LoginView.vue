@@ -2,12 +2,12 @@
   <div class="login-page">
     <div class="login-card">
       <div class="brand">
-        <el-icon :size="36" color="#25d366"><ChatDotRound /></el-icon>
+        <el-icon :size="28" color="#303030"><ChatDotRound /></el-icon>
         <h1>WhatsApp 运营系统</h1>
         <p class="muted">号码 · 注册 · 账号 · 群发 一体化控制台</p>
       </div>
 
-      <el-form ref="formRef" :model="form" :rules="rules" size="large" @keyup.enter="onSubmit">
+      <el-form ref="formRef" :model="form" :rules="rules" size="default" @keyup.enter="onSubmit">
         <el-form-item prop="username">
           <el-input v-model="form.username" placeholder="用户名" :prefix-icon="User" clearable />
         </el-form-item>
@@ -35,7 +35,7 @@
 
         <el-button
           type="primary"
-          size="large"
+          size="default"
           class="submit"
           :loading="loading"
           @click="onSubmit"
@@ -101,61 +101,12 @@ function onForgot() {
 </script>
 
 <style scoped>
-.login-page {
-  height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* 与后台一致：皮肤底色 + 纹理平铺 */
-  background-color: var(--wa-skin-base);
-  background-image: var(--wa-skin-image);
-  background-repeat: repeat-y;
-  background-position: top center;
-  background-size: 100% auto;
-}
-
-.login-card {
-  width: 400px;
-  background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: blur(2px);
-  border: 1px solid rgba(31, 45, 61, 0.06);
-  border-radius: 14px;
-  padding: 36px 32px 28px;
-  box-shadow: 0 12px 40px rgba(31, 45, 61, 0.12);
-}
-
-.brand {
-  text-align: center;
-  margin-bottom: 24px;
-}
-
-.brand h1 {
-  margin: 10px 0 4px;
-  font-size: 20px;
-  color: var(--wa-text);
-  letter-spacing: 0.5px;
-}
-
-.brand p {
-  margin: 0;
-  font-size: 13px;
-}
-
-.row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
-
-.submit {
-  width: 100%;
-  margin-top: 10px;
-}
-
-.tip {
-  margin: 14px 0 0;
-  font-size: 12px;
-  text-align: center;
-}
+.login-page { min-height: 100vh; min-height: 100dvh; padding: 24px 16px; display: flex; align-items: center; justify-content: center; background: var(--wa-bg); }
+.login-card { width: 360px; max-width: 100%; background: var(--wa-surface); border: 1px solid var(--wa-border); border-radius: 16px; padding: 28px 24px 24px; }
+.brand { text-align: center; margin-bottom: 24px; }
+.brand h1 { margin: 12px 0 8px; font-size: 20px; font-weight: 600; color: var(--wa-text); letter-spacing: -.4px; }
+.brand p { margin: 0; font-size: 12px; }
+.row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.submit { width: 100%; height: 36px; margin-top: 8px; border-radius: 18px; }
+.tip { margin: 16px 0 0; font-size: 12px; text-align: center; line-height: 1.5; }
 </style>

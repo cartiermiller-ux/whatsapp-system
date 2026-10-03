@@ -201,15 +201,15 @@
           <span class="muted">统计全部文案的累计发送 / 送达 / 阅读 / 点击，比率按发送量计算。</span>
         </div>
 
-          <el-row :gutter="16">
-            <el-col v-for="card in statCards" :key="card.label" :xs="12" :sm="8" :md="6" :lg="3">
-              <div class="stat-card stat-card-gap">
+          <div class="stat-grid">
+            <div v-for="card in statCards" :key="card.label">
+              <div class="stat-card">
                 <div class="label">{{ card.label }}</div>
                 <div class="value" :style="{ color: card.color }">{{ card.value }}</div>
                 <div class="hint">{{ card.hint }}</div>
               </div>
-          </el-col>
-        </el-row>
+          </div>
+        </div>
 
         <el-card shadow="never" class="section-gap">
           <template #header>
@@ -784,49 +784,49 @@ const statCards = computed(() => [
     label: '文案数',
     value: String(statTotals.value.copies),
     hint: '已创建文案',
-    color: '#303133',
+    color: '#303030',
   },
   {
     label: '发送',
     value: String(statTotals.value.sent),
     hint: '累计发送',
-    color: '#409eff',
+    color: '#737373',
   },
   {
     label: '送达',
     value: String(statTotals.value.delivered),
     hint: `送达率 ${rateText(statTotals.value.delivery_rate)}`,
-    color: '#25d366',
+    color: '#303030',
   },
   {
     label: '阅读',
     value: String(statTotals.value.read),
     hint: `阅读率 ${rateText(statTotals.value.read_rate)}`,
-    color: '#e6a23c',
+    color: '#a16207',
   },
   {
     label: '点击',
     value: String(statTotals.value.click),
     hint: `点击率 ${rateText(statTotals.value.click_rate)}`,
-    color: '#909399',
+    color: '#737373',
   },
   {
     label: '送达率',
     value: rateText(statTotals.value.delivery_rate),
     hint: '送达 / 发送',
-    color: '#25d366',
+    color: '#303030',
   },
   {
     label: '阅读率',
     value: rateText(statTotals.value.read_rate),
     hint: '阅读 / 送达',
-    color: '#e6a23c',
+    color: '#a16207',
   },
   {
     label: '点击率',
     value: rateText(statTotals.value.click_rate),
     hint: '点击 / 阅读',
-    color: '#409eff',
+    color: '#737373',
   },
 ])
 
@@ -860,7 +860,7 @@ onMounted(() => {
 
 .form-hint {
   font-size: 12px;
-  color: #909399;
+  color: #737373;
   line-height: 1.6;
   margin-top: 4px;
 }

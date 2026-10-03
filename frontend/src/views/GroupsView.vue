@@ -160,10 +160,10 @@ async function fetchLinks() {
 }
 
 function scoreColor(score: number) {
-  if (score >= 80) return '#25d366'
-  if (score >= 60) return '#409eff'
-  if (score >= 40) return '#e6a23c'
-  return '#f56c6c'
+  if (score >= 80) return '#303030'
+  if (score >= 60) return '#737373'
+  if (score >= 40) return '#a16207'
+  return '#b42318'
 }
 
 async function load() {

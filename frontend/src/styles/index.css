@@ -1,353 +1,120 @@
-/* ============================================================
-   全局样式与排版规范
-   ------------------------------------------------------------
-   【页面骨架】所有业务页面按这个顺序组织，不要各写各的：
-
-     .page                       页面容器（内边距 20px）
-       .page-header              标题行
-         h2 + .sub               标题 + 副标题
-         .actions                右侧操作区（两个以上按钮时用）
-       .filter-bar               查询条件行（放在卡片外面、卡片上方）
-       .el-card                  内容卡片
-         .card-header            卡片标题行（左标题 / 右统计，可选）
-         .pager                  分页，固定右对齐（可选）
-       .section-gap              区块之间的间距
-
-   【间距】只用 --wa-space-* 这套 4 的倍数，不要出现 10px / 14px 这类随手值。
-   【字号】只用 --wa-font-*，正文 14px / 次要 13px / 辅助 12px。
-   【类名约定】
-     .field-hint   表单字段下方的说明文字（不是 .stat-card 里的 .hint）
-     .actions      按钮组
-     .form-actions 表单底部按钮行，对齐表单项时加 .is-indented
-   ============================================================ */
-
+/* GPT-inspired neutral palette; wa-* names preserve existing view contracts. */
 :root {
-  /* ---------- 皮肤 ----------
-     图案来自 src/assets/skin-banner.png（1920x390 的浅色线性图标纹理）。
-     图片 93% 的像素是 #eef0f2，铺底颜色与它完全一致，所以纵向平铺看不出接缝。
-     想换皮肤只要替换这个文件、并把 --wa-skin-base 改成图片的底色即可。 */
-  --wa-skin-image: url('../assets/skin-banner.png');
-  --wa-skin-base: #eef0f2;
-
-  /* ---------- 颜色 ---------- */
-  --wa-bg: var(--wa-skin-base);
-  --wa-sidebar-bg: #1f2d3d;
-  --wa-sidebar-active: #263445;
-  --wa-brand: #25d366;
-  --wa-primary: #409eff;
-  --wa-success: #25d366;
-  --wa-warning: #e6a23c;
-  --wa-danger: #f56c6c;
-  --wa-border: #e4e7ed;
-  --wa-text: #303133;
-  --wa-text-secondary: #606266;
-  --wa-text-muted: #909399;
-  --wa-text-placeholder: #c0c4cc;
-
-  /* ---------- 间距（统一 4 的倍数） ---------- */
-  --wa-space-1: 4px;
-  --wa-space-2: 8px;
-  --wa-space-3: 12px;
-  --wa-space-4: 16px;
-  --wa-space-5: 20px;
-
-  /* ---------- 字号 ---------- */
-  --wa-font-xs: 12px;
-  --wa-font-sm: 13px;
-  --wa-font-base: 14px;
-  --wa-font-title: 18px;
-
-  /* ---------- 圆角 ---------- */
-  --wa-radius-sm: 2px;
-  --wa-radius: 4px;
+ color-scheme: light;
+ --wa-font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+ --el-font-family:var(--wa-font-family);
+ --wa-skin-image:none; --wa-skin-base:#fff; --wa-bg:#fff; --wa-surface:#fff; --wa-hover:#f5f5f5;
+ --wa-sidebar-bg:#f9f9f9; --wa-sidebar-active:#ececec;
+ --wa-brand:#303030; --wa-primary:#303030; --wa-success:#525252; --wa-warning:#a16207; --wa-danger:#b42318;
+ --wa-border:#e5e5e5; --wa-text:#303030; --wa-text-secondary:#5d5d5d; --wa-text-muted:#737373; --wa-text-placeholder:#737373;
+ --wa-space-1:4px; --wa-space-2:8px; --wa-space-3:12px; --wa-space-4:16px; --wa-space-5:20px;
+ --wa-font-xs:12px; --wa-font-sm:13px; --wa-font-base:13px; --wa-font-title:18px;
+ --wa-radius-sm:6px; --wa-radius:10px;
+ --el-font-size-base:13px; --el-component-size:30px; --el-component-size-small:26px;
+ --el-color-primary:#303030; --el-color-primary-light-3:#606060; --el-color-primary-light-5:#8b8b8b; --el-color-primary-light-7:#bdbdbd; --el-color-primary-light-8:#dedede; --el-color-primary-light-9:#f2f2f2; --el-color-primary-dark-2:#171717;
+ --el-color-success:#525252; --el-color-success-light-3:#858585; --el-color-success-light-5:#a8a8a8; --el-color-success-light-7:#cbcbcb; --el-color-success-light-8:#dcdcdc; --el-color-success-light-9:#eee; --el-color-success-dark-2:#414141;
+ --el-color-info:#737373; --el-color-info-light-9:#f5f5f5;
+ --el-color-warning:#a16207; --el-color-warning-light-3:#bd914b; --el-color-warning-light-5:#d0b183; --el-color-warning-light-7:#e3d0b5; --el-color-warning-light-8:#ece0cd; --el-color-warning-light-9:#faf5eb; --el-color-warning-dark-2:#804e06;
+ --el-color-danger:#b42318; --el-color-danger-light-3:#ca655d; --el-color-danger-light-5:#d9918c; --el-color-danger-light-7:#e8bdb9; --el-color-danger-light-8:#f0d3d1; --el-color-danger-light-9:#fdf0ef; --el-color-danger-dark-2:#901c13;
+ --el-bg-color:#fff; --el-bg-color-page:#fff; --el-bg-color-overlay:#fff;
+ --el-fill-color:#f1f1f1; --el-fill-color-light:#f9f9f9; --el-fill-color-lighter:#fafafa; --el-fill-color-blank:#fff;
+ --el-text-color-primary:#303030; --el-text-color-regular:#5d5d5d; --el-text-color-secondary:#737373; --el-text-color-placeholder:#737373;
+ --el-border-color:#d4d4d4; --el-border-color-light:#e5e5e5; --el-border-color-lighter:#ededed; --el-border-radius-base:6px; --el-border-radius-small:4px;
+}
+* { box-sizing:border-box; }
+html,body,#app { height:100%; margin:0; padding:0; }
+body { font-family:var(--wa-font-family); background:var(--wa-bg); color:var(--wa-text); font-size:var(--wa-font-base); line-height:1.5; -webkit-font-smoothing:antialiased; }
+::selection { background:#dedede; color:#171717; }
+.skin-surface { background:var(--wa-bg); }
+.page { padding:16px; }
+.page-header { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+.page-header h2 { margin:0; font-size:var(--wa-font-title); font-weight:600; letter-spacing:-.3px; color:var(--wa-text); }
+.page-header .sub { margin-top:4px; font-size:12px; color:var(--wa-text-muted); }
+.actions { display:flex; flex-wrap:wrap; gap:8px; }
+.actions>.el-button+.el-button { margin-left:0; }
+.filter-bar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:12px; }
+.card-header { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.pager { display:flex; justify-content:flex-end; margin-top:12px; overflow-x:auto; }
+.section-gap { margin-top:12px; }
+.block-gap { margin-bottom:12px; }
+.stat-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.stat-card { background:var(--wa-surface); border:1px solid var(--wa-border); border-radius:var(--wa-radius); padding:14px 16px; }
+.stat-card .label { color:var(--wa-text-muted); font-size:12px; }
+.stat-card .value { margin-top:8px; font-size:24px; font-weight:600; line-height:1.2; color:var(--wa-text); font-variant-numeric:tabular-nums; }
+.stat-card .hint { margin-top:4px; font-size:12px; color:var(--wa-text-muted); }
+.stat-card-gap { margin-bottom:12px; }
+.field-hint { width:100%; margin-top:4px; font-size:12px; line-height:1.5; color:var(--wa-text-muted); }
+.form-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.form-actions.is-indented { padding-left:200px; }
+.muted { color:var(--wa-text-muted); }
+.unit { margin-left:8px; }
+.tag-gap { margin-left:4px; }
+.mono,.code { font-family:Consolas,Monaco,monospace; font-size:12px; }
+.code { font-weight:600; color:var(--wa-brand); }
+.placeholder-panel .ph-api code { background:var(--wa-hover); padding:2px 6px; border-radius:4px; color:var(--wa-text-secondary); font-family:Consolas,Monaco,monospace; font-size:12px; }
+.placeholder-panel .ph-tip { color:var(--wa-text-muted); font-size:13px; margin:8px 0 0; }
+.placeholder-panel .ph-body { text-align:center; }
+.el-card { --el-card-padding:16px; border-radius:var(--wa-radius); border:1px solid var(--wa-border); box-shadow:none !important; }
+.el-card__header { padding:12px 16px; font-size:13px; font-weight:600; }
+.el-button { border-radius:var(--wa-radius-sm); font-weight:500; }
+/* Preserve inset border shadows and keyboard focus from Element Plus. */
+.el-input__wrapper,.el-select__wrapper { border-radius:var(--wa-radius-sm); }
+.el-form-item { margin-bottom:16px; }
+.el-form-item__label { font-size:13px; }
+.el-table { --el-table-header-bg-color:#f9f9f9; --el-table-row-hover-bg-color:#f5f5f5; --el-table-border-color:#ededed; --el-table-text-color:#303030; --el-table-header-text-color:#5d5d5d; border-radius:8px; font-size:13px; }
+.el-table .el-table__cell { padding:7px 0; }
+.el-table--small .el-table__cell { padding:5px 0; }
+.el-dialog,.el-message-box { border-radius:12px; max-width:calc(100vw - 24px); }
+.el-tag { border-radius:5px; }
+.el-menu { border-right:none !important; }
+.el-avatar { --el-avatar-bg-color:#ececec; color:#525252; }
+.el-empty { padding:24px 0; }
+.el-tabs__item { height:36px; font-size:13px; }
+.el-dropdown-menu__item:focus-visible { outline:2px solid var(--wa-primary); outline-offset:-2px; }
+::-webkit-scrollbar { width:6px; height:6px; }
+::-webkit-scrollbar-thumb { background:#c4c4c4; border-radius:6px; }
+::-webkit-scrollbar-track { background:transparent; }
+@media(max-width:768px) {
+ .page { padding:12px; }
+ .el-card { --el-card-padding:12px; }
+ .el-card__header { padding:10px 12px; }
+ .form-actions.is-indented { padding-left:0; }
+ .filter-bar>.el-input,.filter-bar>.el-select { max-width:100%; }
 }
 
-* {
-  box-sizing: border-box;
+/* Card layouts: even columns, predictable wrap, no contact between stacked rows. */
+.page { container: page / inline-size; }
+.card-row { row-gap: 12px; }
+.card-row > .el-col { min-width: 0; }
+.stat-grid > div { min-width: 0; }
+.stat-grid .stat-card { height: 100%; overflow-wrap: anywhere; }
+.stat-card .value { overflow-wrap: anywhere; }
+@container page (min-width: 720px) { .stat-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@container page (max-width: 260px) { .stat-grid { grid-template-columns: minmax(0, 1fr); } }
+/* Registration statistics sit in a smaller right card and retain a 2 x 2 grid. */
+.register-status-card .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 1199px) {
+ .card-row > .el-col { flex: 0 0 100%; max-width: 100%; }
 }
 
-html,
-body,
-#app {
-  height: 100%;
-  margin: 0;
-  padding: 0;
+/* Complete responsive audit: editors, side panels, long values and narrow forms. */
+.el-form-item__content { min-width: 0; }
+.field-hint, .el-descriptions__content, .el-descriptions__label { overflow-wrap: anywhere; }
+.el-input-number { max-width: 100%; }
+.el-drawer { max-width: 100vw; }
+.el-drawer__body { min-width: 0; overflow-x: hidden; }
+.el-dialog { max-height: calc(100dvh - 32px); overflow-y: auto; margin-bottom: 16px; }
+@container page (max-width: 560px) {
+ .el-form .el-form-item { flex-direction: column; align-items: stretch; }
+ .el-form .el-form-item__label { width: auto !important; height: auto; justify-content: flex-start; line-height: 1.5; margin-bottom: 6px; padding-right: 0; }
+ .el-form .el-form-item__content { margin-left: 0 !important; width: 100%; }
+ .form-actions.is-indented { padding-left: 0; }
 }
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
-    'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
-  background: var(--wa-bg);
-  color: var(--wa-text);
-  font-size: var(--wa-font-base);
-  line-height: 1.6;
-}
-
-/* ============================================================
-   Element Plus 主色 → 品牌绿
-   ------------------------------------------------------------
-   默认主色是蓝色，和侧边栏选中态的绿色冲突，一屏里会出现蓝+绿两种强调色。
-   统一成品牌绿之后，全站强调色收敛为三种（绿=主/成功、橙=警告、红=危险），
-   主 CTA 也因此成为唯一的高饱和按钮。变量必须在 element-plus 样式之后覆盖，
-   见 main.ts 的引入顺序。
-   ============================================================ */
-:root {
-  --el-color-primary: #25d366;
-  --el-color-primary-light-3: #66e094;
-  --el-color-primary-light-5: #92e9b3;
-  --el-color-primary-light-7: #bef2d1;
-  --el-color-primary-light-8: #d3f6e0;
-  --el-color-primary-light-9: #e9fbf0;
-  --el-color-primary-dark-2: #1ea952;
-}
-
-/* ============================================================
-   皮肤铺面：底色 + 纹理，纵向平铺且始终从顶部开始
-   ============================================================ */
-.skin-surface {
-  background-color: var(--wa-skin-base);
-  background-image: var(--wa-skin-image);
-  background-repeat: repeat-y;
-  background-position: top center;
-  background-size: 100% auto;
-}
-
-/* ============================================================
-   页面骨架
-   ============================================================ */
-.page {
-  padding: var(--wa-space-5);
-}
-
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--wa-space-3);
-  flex-wrap: wrap;
-  margin-bottom: var(--wa-space-4);
-}
-
-.page-header h2 {
-  margin: 0;
-  font-size: var(--wa-font-title);
-  font-weight: 600;
-  color: var(--wa-text);
-}
-
-.page-header .sub {
-  margin-top: var(--wa-space-1);
-  font-size: var(--wa-font-sm);
-  color: var(--wa-text-muted);
-}
-
-/* 标题行右侧的操作区：按钮多时用它包一层，自动换行 */
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--wa-space-2);
-}
-
-/* 查询条件行：放在卡片外面、紧贴卡片上方 */
-.filter-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--wa-space-3);
-  margin-bottom: var(--wa-space-4);
-}
-
-/* 卡片标题行：左标题、右统计 */
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-/* 分页：统一右对齐 */
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: var(--wa-space-4);
-}
-
-/* 区块间距 */
-.section-gap {
-  margin-top: var(--wa-space-4);
-}
-
-.block-gap {
-  margin-bottom: var(--wa-space-4);
-}
-
-/* ============================================================
-   统计卡片
-   ============================================================ */
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: var(--wa-space-4);
-}
-
-.stat-card {
-  background: #fff;
-  border: 1px solid var(--wa-border);
-  border-radius: var(--wa-radius);
-  padding: 18px var(--wa-space-5);
-}
-
-.stat-card .label {
-  color: var(--wa-text-muted);
-  font-size: var(--wa-font-sm);
-}
-
-.stat-card .value {
-  margin-top: var(--wa-space-2);
-  font-size: 28px;
-  font-weight: 700;
-  line-height: 1.1;
-  color: var(--wa-text);
-}
-
-.stat-card .hint {
-  margin-top: 6px;
-  font-size: var(--wa-font-xs);
-  color: var(--wa-text-placeholder);
-}
-
-/* 用 el-row/el-col 排统计卡时，给列加这个类保持行距 */
-.stat-card-gap {
-  margin-bottom: var(--wa-space-4);
-}
-
-/* ============================================================
-   表单
-   ============================================================ */
-/* 字段说明文字（表单里用这个，不要用 .hint，那个是统计卡的） */
-.field-hint {
-  width: 100%;
-  margin-top: var(--wa-space-2);
-  font-size: var(--wa-font-xs);
-  line-height: 1.7;
-  color: var(--wa-text-muted);
-}
-
-/* 表单底部按钮行；需要和表单项左对齐时加 .is-indented 并配合 label-width */
-.form-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--wa-space-2);
-  margin-top: var(--wa-space-2);
-}
-
-.form-actions.is-indented {
-  padding-left: 200px;
-}
-
-/* ============================================================
-   通用工具类
-   ============================================================ */
-.muted {
-  color: var(--wa-text-muted);
-}
-
-/* 跟在输入框/按钮后面的单位或说明 */
-.unit {
-  margin-left: var(--wa-space-2);
-}
-
-/* 并排的标签之间留一点缝 */
-.tag-gap {
-  margin-left: 6px;
-}
-
-.mono,
-.code {
-  font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
-  font-size: var(--wa-font-xs);
-}
-
-.code {
-  font-weight: 600;
-  color: var(--wa-brand);
-}
-
-/* ============================================================
-   占位面板
-   ============================================================ */
-.placeholder-panel .ph-api code {
-  background: #f4f4f5;
-  padding: 2px 6px;
-  border-radius: var(--wa-radius-sm);
-  color: var(--wa-warning);
-  font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
-  font-size: var(--wa-font-xs);
-}
-
-.placeholder-panel .ph-tip {
-  color: var(--wa-text-muted);
-  font-size: var(--wa-font-sm);
-  margin: var(--wa-space-2) 0 0;
-}
-
-.placeholder-panel .ph-body {
-  text-align: center;
-}
-
-/* ============================================================
-   Element Plus 扁平化统一微调
-   ============================================================ */
-.el-card {
-  border-radius: var(--wa-radius);
-  border: 1px solid var(--wa-border);
-  box-shadow: none !important;
-}
-
-.el-button {
-  border-radius: var(--wa-radius-sm);
-}
-
-.el-input__wrapper,
-.el-select__wrapper {
-  border-radius: var(--wa-radius-sm);
-  box-shadow: none !important;
-  border: 1px solid var(--wa-border);
-}
-
-.el-table {
-  border-radius: var(--wa-radius);
-}
-
-.el-dialog {
-  border-radius: var(--wa-radius);
-}
-
-.el-tag {
-  border-radius: var(--wa-radius-sm);
-}
-
-/* 侧边栏扁平化 */
-.el-menu {
-  border-right: none !important;
-}
-
-.el-menu-item {
-  border-radius: 0 !important;
-}
-
-/* ============================================================
-   滚动条简化
-   ============================================================ */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--wa-text-placeholder);
-  border-radius: var(--wa-radius);
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
+@media (max-width: 600px) {
+ .el-dialog { margin-top: 12px; max-height: calc(100dvh - 24px); }
+ .el-dialog .el-form-item { flex-direction: column; align-items: stretch; }
+ .el-dialog .el-form-item__label { width: auto !important; height: auto; justify-content: flex-start; line-height: 1.5; margin-bottom: 6px; }
+ .el-dialog .el-form-item__content { margin-left: 0 !important; width: 100%; }
+ .el-dialog__footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+ .el-dialog__footer .el-button + .el-button { margin-left: 0; }
 }

@@ -516,10 +516,10 @@ onMounted(loadAll)
 .group-title {
   margin: 6px 0 14px;
   padding-left: 10px;
-  border-left: 3px solid #25d366;
+  border-left: 3px solid #303030;
   font-size: 14px;
   font-weight: 600;
-  color: #303133;
+  color: #303030;
 }
 
 .text-input {

@@ -41,7 +41,7 @@
       <el-button @click="resetFilters">重置</el-button>
     </div>
 
-    <el-row :gutter="16" class="section-gap">
+    <el-row :gutter="16" class="card-row section-gap">
       <el-col :xs="24" :md="16">
         <el-card shadow="never">
           <el-table v-loading="loading" :data="pagedAccounts" stripe>
@@ -205,7 +205,7 @@ const statusChartOption = computed<EChartsOption>(() => {
         type: 'bar',
         barWidth: '45%',
         data: counts,
-        itemStyle: { color: '#409eff', borderRadius: [4, 4, 0, 0] },
+        itemStyle: { color: '#737373', borderRadius: [4, 4, 0, 0] },
         label: { show: true, position: 'top' },
       },
     ],
@@ -217,10 +217,10 @@ watch([() => filters.keyword, () => filters.status, () => filters.stage], () => 
 })
 
 function healthColor(score: number) {
-  if (score >= 90) return '#25d366'
-  if (score >= 80) return '#409eff'
-  if (score >= 60) return '#e6a23c'
-  return '#f56c6c'
+  if (score >= 90) return '#303030'
+  if (score >= 80) return '#737373'
+  if (score >= 60) return '#a16207'
+  return '#b42318'
 }
 
 function resetFilters() {
