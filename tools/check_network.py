@@ -193,7 +193,7 @@ def main(argv=None):
         if proxy is None:
             line(f"      {BAD} 代理地址无法解析: {raw_proxy}")
         else:
-            line(f"      目标代理 {proxy.describe()}")
+            line(f"      目标代理 {proxy.display()}")
             try:
                 sock = open_tunnel(proxy)
             except Exception as exc:
