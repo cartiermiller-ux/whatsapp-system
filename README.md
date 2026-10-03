@@ -41,6 +41,7 @@
 | 余额与计费 | \`/billing\` | 余额概览、USDT 充值订单、消费流水、国家计费规则 |
 | 个人中心 | \`/profile\` | 账号信息、编辑资料、修改密码、操作日志 |
 | 系统设置 | \`/settings\` | 全局参数（按 schema 动态渲染）、用户管理 |
+| 资源对接 | \`/integrations\` | 代理池、接码订单、采购订单、供应商状态 |
 
 ---
 
@@ -61,6 +62,7 @@
 | 群链接获取 | 🧪 占位 | \`POST /groups/fetch-links\` 返回"待 wasock 接入" |
 | 充值到账 | 🧪 人工确认 | \`POST /balance/recharge/{id}/confirm\`，等链上回调接入 |
 | 计费规则 | 🧪 内置常量 | \`BILLING_RULES\`，后续可迁到表里后台维护 |
+| 代理 IP / 接码 / 账号采购 | 🔌 已接入，待填密钥 | 统一 Provider 层，**没配密钥自动用 mock**；详见 [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) |
 
 ---
 
@@ -78,14 +80,23 @@
 whatsapp-system/
 ├── main.py                  # 后端全部代码：模型、初始化、53 个接口
 ├── connect_whatsapp.py      # 扫码登录脚本：终端直接打印二维码 + 落盘 qr.png
+├── providers/               # 第三方对接层：代理 IP / 接码 / 发消息 / 账号采购
+│   ├── base.py              # HTTP 客户端、错误归一、状态对象
+│   ├── sms_provider.py      # 接码：mock / virtualsms / smsactivate
+│   ├── proxy_provider.py    # 代理：mock / byteful(Ping Proxies) / static
+│   ├── message_provider.py  # 发消息：wasock / wsapi / mock
+│   └── account_provider.py  # 账号采购：mock / http
+├── env.example.ps1          # 所有对接相关环境变量示例
 ├── requirements.txt         # 后端依赖（wasock 仅登录脚本需要，后端不需要）
 ├── whatsapp_auth/           # ⚠️ WhatsApp 登录态，已在 .gitignore 中，勿提交
 ├── whatsapp.db              # SQLite 数据库，首次启动自动建表 + 种子数据
 ├── docs/
 │   ├── API.md               # 接口文档
+│   ├── INTEGRATIONS.md      # 第三方对接说明（代理/接码/发消息/采购）
 │   └── TROUBLESHOOTING.md   # 排障手册（二维码不出、DNS 污染等）
 ├── tests/
-│   ├── real_send_test.py    # 发送逻辑自测（49 项断言，不联网）
+│   ├── real_send_test.py    # 发送逻辑自测（61 项断言，不联网）
+│   ├── integrations_test.py # 第三方对接自测（56 项断言，不联网）
 │   ├── p2_api_test.py       # 接口回归（109 项断言）
 │   ├── mass_send_http_test.py
 │   └── wa_net_diag.py       # WhatsApp 连通性诊断
@@ -231,9 +242,28 @@ connect_whatsapp.py ──启动──> wasock Node 服务 (127.0.0.1:5000) <─
 
 ---
 
+## 资源对接
+
+四类外部资源都收敛到统一 Provider 层（\`providers/\`），**没配密钥时自动退化为 mock**，
+所以开箱即可跑通，拿到密钥后只改环境变量：
+
+| 资源 | 供应商 | 已核对接口 | 配置 |
+|---|---|---|---|
+| 代理 IP | Byteful / Ping Proxies | ✅ 官方文档 | \`PROXY_PROVIDER=byteful\` + 公私钥 |
+| 接码平台 | VirtualSMS / sms-activate 系（SMSTwins 等） | ✅ 官方文档 | \`SMS_PROVIDER=virtualsms\` + key |
+| 发消息 | wasock（现用）/ WSAPI | wasock 协议已核对 | \`MESSAGE_PROVIDER=wasock\` |
+| 账号采购 | 账号星球 | ⚠️ 无公开文档，用通用适配器 | \`ACCOUNT_PROVIDER=http\` + 路径 |
+
+注册时会给号码自动分配代理（写进 \`number_pool.proxy_ip\`），接码平台可一键取号并等待验证码。
+
+完整说明（含接口字段、环境变量、状态机）：**[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)**，
+变量示例见 \`env.example.ps1\`（可直接 dot-source）。
+
+---
+
 ## 数据模型
 
-共 13 张表，首次启动由 \`Base.metadata.create_all\` 自动创建；新增字段通过 \`ensure_columns()\` 做轻量迁移（\`create_all\` 不会给已有表补字段）。
+共 16 张表，首次启动由 \`Base.metadata.create_all\` 自动创建；新增字段通过 \`ensure_columns()\` 做轻量迁移（\`create_all\` 不会给已有表补字段）。
 
 | 分组 | 表 | 说明 |
 |---|---|---|
@@ -250,6 +280,9 @@ connect_whatsapp.py ──启动──> wasock Node 服务 (127.0.0.1:5000) <─
 | 用户 | \`sys_user\` | 用户：pbkdf2 散列、角色、租户、登录统计 |
 | | \`operation_log\` | 操作日志：时间 / 操作 / 对象 / 结果 / 详情 |
 | 配置 | \`setting\` | 全局参数键值对 |
+| 对接 | \`proxy_pool\` | 代理池：地址、状态机（free/in_use/disabled）、成功率 |
+| | \`sms_order\` | 接码订单：远端单号、号码、验证码、状态 |
+| | \`purchase_order\` | 账号采购订单：商品、数量、金额、交付账号 |
 
 > \`mass_send_task.target_type\` 用于区分目标语义：\`group\`（\`resource_group.id\`）或 \`contact\`（\`number_pool.id\` 或手机号）。
 > 两张表主键都从 1 开始，**只按 ID 猜会把消息发到错误的会话**，因此必须带上类型。
@@ -275,7 +308,8 @@ connect_whatsapp.py ──启动──> wasock Node 服务 (127.0.0.1:5000) <─
 ## 测试
 
 \`\`\`powershell
-python tests/real_send_test.py        # 49 项：发送逻辑，不联网
+python tests/real_send_test.py        # 61 项：发送逻辑与传输层，不联网
+python tests/integrations_test.py     # 56 项：代理/接码/采购对接，不联网
 python tests/p2_api_test.py           # 109 项：接口回归（需 8099 服务，见 tests/README.md）
 python tests/mass_send_http_test.py   # 9 项：群发 HTTP 链路
 python tests/wa_net_diag.py           # WhatsApp 连通性诊断

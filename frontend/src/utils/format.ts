@@ -154,3 +154,35 @@ export function statusTagType(status: string): 'success' | 'info' | 'warning' | 
       return 'info'
   }
 }
+
+/** 资源对接 —— 供应商类型 */
+export const PROVIDER_KIND_LABEL: Record<string, string> = {
+  sms: '接码平台',
+  proxy: '代理 IP',
+  message: '发消息通道',
+  account: '账号采购',
+}
+
+/** 资源对接 —— 代理池状态 */
+export const PROXY_STATUS_LABEL: Record<string, string> = {
+  free: '空闲',
+  in_use: '占用',
+  disabled: '停用',
+}
+
+/** 资源对接 —— 接码订单状态 */
+export const SMS_ORDER_STATUS_LABEL: Record<string, string> = {
+  waiting: '等待中',
+  completed: '已完成',
+  cancelled: '已取消',
+  expired: '已过期',
+}
+
+/** 资源对接 —— 账号采购订单状态 */
+export const PURCHASE_ORDER_STATUS_LABEL: Record<string, string> = {
+  pending: '待交付',
+  paid: '已付款',
+  delivered: '已交付',
+  failed: '失败',
+  cancelled: '已取消',
+}

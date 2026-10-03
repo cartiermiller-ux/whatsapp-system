@@ -22,7 +22,18 @@ python tests/real_send_test.py
 
 共 **61 项断言**。临时库写在 \`tests/.tmp/\`，不会碰 \`whatsapp.db\`，也不连真实 WhatsApp。
 
-## 2. 接口回归（P2 模块，109 项断言）
+## 2. 第三方对接自测（不需要联网、不需要密钥）
+
+\`\`\`powershell
+python tests/integrations_test.py
+\`\`\`
+
+覆盖：代理/号码/验证码解析、**真实代理连通性探测**（起本地假 CONNECT 代理，验证
+\`Proxy-Authorization\` 与失败路径）、代理池同步/导入/分配/释放/连续失败自动停用、
+接码取号-查询-等待-取消全流程、账号采购下单-同步-删除、注册时自动写 \`proxy_ip\`、
+发消息通道切换。共 **56 项断言**。
+
+## 3. 接口回归（P2 模块，109 项断言）
 
 先起一个隔离的后端，再跑脚本：
 
@@ -38,7 +49,7 @@ python tests/p2_api_test.py
 覆盖鉴权、广告文案/超链 CRUD、短链跳转计点击、余额与充值到账、个人中心与改密、
 用户管理权限、系统参数校验等。
 
-## 3. 群发任务 HTTP 链路（9 项断言）
+## 4. 群发任务 HTTP 链路（9 项断言）
 
 复用上面 8099 的服务：
 
@@ -48,7 +59,7 @@ python tests/mass_send_http_test.py
 
 验证开关关闭时任务确实由 \`simulate_mass_send\` 跑完，且 \`target_type\` 正确落库与返回。
 
-## 4. WhatsApp 网络诊断（排查连不上 / 不出二维码）
+## 5. WhatsApp 网络诊断（排查连不上 / 不出二维码）
 
 \`\`\`powershell
 python tests/wa_net_diag.py

@@ -33,6 +33,10 @@ import type {
   NumberRow,
   OperationLogRow,
   PageResult,
+  ProductRow,
+  ProvidersStatus,
+  ProxyRow,
+  PurchaseOrderRow,
   RechargeConfirmResult,
   RechargeOrder,
   RechargeOrderListResult,
@@ -41,6 +45,8 @@ import type {
   RegisterStatusResult,
   SettingField,
   SettingsUpdateReq,
+  SmsOrderRow,
+  SmsPollResult,
   TransactionRow,
 } from '@/types/api'
 
@@ -344,5 +350,84 @@ export const authApi = {
       method: 'post',
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     })
+  },
+}
+
+/** 资源对接 —— /api/v1/providers、/proxies、/sms、/purchase */
+export const integrationApi = {
+  /** 供应商（接码 / 代理 / 账号采购 / 发消息通道）状态汇总 */
+  status() {
+    return request<ProvidersStatus>({ url: '/providers/status', method: 'get' })
+  },
+  listProxies(query: { page?: number; size?: number; status?: string; country?: string } = {}) {
+    return request<PageResult<ProxyRow>>({ url: '/proxies', method: 'get', params: query })
+  },
+  syncProxies(payload: { limit?: number; country?: string } = {}) {
+    return request<{ provider: string; fetched: number; added: number; updated: number }>({
+      url: '/proxies/sync',
+      method: 'post',
+      data: payload,
+    })
+  },
+  importProxies(payload: { text: string; country?: string }) {
+    return request<{ added: number; skipped: number }>({
+      url: '/proxies/import',
+      method: 'post',
+      data: payload,
+    })
+  },
+  testProxy(id: number) {
+    return request<{ ok: boolean; detail: string; proxy: ProxyRow }>({
+      url: `/proxies/${id}/test`,
+      method: 'post',
+    })
+  },
+  releaseProxy(id: number) {
+    return request<ProxyRow>({ url: `/proxies/${id}/release`, method: 'post' })
+  },
+  listSmsOrders(query: { page?: number; size?: number; status?: string } = {}) {
+    return request<PageResult<SmsOrderRow>>({ url: '/sms/orders', method: 'get', params: query })
+  },
+  createSmsOrder(payload: { service: string; country: string }) {
+    return request<SmsOrderRow>({ url: '/sms/orders', method: 'post', data: payload })
+  },
+  pollSmsOrder(id: number) {
+    return request<SmsOrderRow>({ url: `/sms/orders/${id}/poll`, method: 'post' })
+  },
+  /** 阻塞等待验证码：后端最坏会等待 180 秒，必须覆盖默认的 20 秒超时 */
+  waitSmsOrder(id: number, payload: { timeout?: number; interval?: number } = { timeout: 180, interval: 5 }) {
+    return request<SmsPollResult>({
+      url: `/sms/orders/${id}/wait`,
+      method: 'post',
+      data: payload,
+      timeout: 200000,
+    })
+  },
+  cancelSmsOrder(id: number) {
+    return request<SmsOrderRow>({ url: `/sms/orders/${id}/cancel`, method: 'post' })
+  },
+  listProducts() {
+    return request<{ provider: string; list: ProductRow[] }>({
+      url: '/purchase/products',
+      method: 'get',
+    })
+  },
+  listPurchaseOrders(
+    query: { page?: number; size?: number; status?: string; keyword?: string } = {},
+  ) {
+    return request<PageResult<PurchaseOrderRow>>({
+      url: '/purchase/orders',
+      method: 'get',
+      params: query,
+    })
+  },
+  createPurchaseOrder(payload: { product_id: string; quantity: number; remark?: string }) {
+    return request<PurchaseOrderRow>({ url: '/purchase/orders', method: 'post', data: payload })
+  },
+  syncPurchaseOrder(id: number) {
+    return request<PurchaseOrderRow>({ url: `/purchase/orders/${id}/sync`, method: 'post' })
+  },
+  removePurchaseOrder(id: number) {
+    return request<{ deleted: number }>({ url: `/purchase/orders/${id}`, method: 'delete' })
   },
 }

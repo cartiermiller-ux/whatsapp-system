@@ -226,6 +226,78 @@ class Setting(Base):
     description = Column(String(255), default="")
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
+# ---------- 集成相关模型：代理池 / 接码订单 / 采购订单 ----------
+class ProxyPool(Base):
+    """代理 IP 池。来源可以是供应商同步（Byteful/Ping Proxies）或手工导入。"""
+    __tablename__ = "proxy_pool"
+    id = Column(Integer, primary_key=True, index=True)
+    host = Column(String(128))
+    port = Column(Integer, default=0)
+    username = Column(String(128), default="")
+    password = Column(String(128), default="")
+    protocol = Column(String(16), default="http")        # http / socks5
+    country = Column(String(32), default="")
+    asn = Column(String(128), default="")
+    provider = Column(String(32), default="")            # mock / byteful / static
+    status = Column(String(16), default="free", index=True)   # free / in_use / disabled
+    bound_number_id = Column(Integer, nullable=True, index=True)
+    used_count = Column(Integer, default=0)
+    ok_count = Column(Integer, default=0)
+    fail_count = Column(Integer, default=0)
+    latency_ms = Column(Integer, nullable=True)
+    last_checked_at = Column(DateTime, nullable=True)
+    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+    @property
+    def address(self) -> str:
+        """完整代理地址；number_pool.proxy_ip 存的就是这个字符串。"""
+        if self.username:
+            return f"{self.protocol}://{self.username}:{self.password}@{self.host}:{self.port}"
+        return f"{self.protocol}://{self.host}:{self.port}"
+
+
+class SmsOrder(Base):
+    """接码平台的取号订单。"""
+    __tablename__ = "sms_order"
+    id = Column(Integer, primary_key=True, index=True)
+    provider = Column(String(32), default="")            # virtualsms / smsactivate / mock
+    remote_order_id = Column(String(128), default="", index=True)
+    phone = Column(String(32), default="")
+    phone_digits = Column(String(32), default="")
+    service = Column(String(32), default="wa")
+    country = Column(String(32), default="")
+    status = Column(String(20), default="waiting", index=True)   # waiting/completed/cancelled/expired
+    price = Column(Numeric(18, 6), nullable=True)
+    code = Column(String(32), default="")
+    text = Column(Text, default="")
+    number_id = Column(Integer, nullable=True, index=True)       # 关联 number_pool.id
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class PurchaseOrder(Base):
+    """账号采购订单（对接账号星球这类成品号供应商）。"""
+    __tablename__ = "purchase_order"
+    id = Column(Integer, primary_key=True, index=True)
+    order_no = Column(String(64), default="", index=True)
+    provider = Column(String(32), default="")            # mock / http
+    product_id = Column(String(64), default="")
+    product_name = Column(String(255), default="")
+    quantity = Column(Integer, default=1)
+    unit_price = Column(Numeric(18, 6), default=0)
+    amount = Column(Numeric(18, 6), default=0)
+    currency = Column(String(10), default="USDT")
+    status = Column(String(20), default="pending", index=True)   # pending/paid/delivered/failed/cancelled
+    accounts = Column(Text, default="")                  # 交付的账号，逗号分隔
+    message = Column(String(500), default="")
+    remark = Column(String(500), default="")
+    created_by = Column(String(64), default="")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 # ---------- 全局参数定义（默认值 / 类型 / 取值范围 / 分组） ----------
 SETTING_DEFS: Dict[str, Dict[str, Any]] = {
     "send_interval_min": {
@@ -400,6 +472,8 @@ def seed_defaults():
 # 轻量迁移：create_all 只建新表，不会给已存在的表补字段
 REQUIRED_COLUMNS: Dict[str, Dict[str, str]] = {
     "mass_send_task": {"target_type": "VARCHAR(20) DEFAULT 'group'"},
+    # 注册时自动分配的代理，存完整代理地址（http://user:pass@host:port）
+    "number_pool": {"proxy_ip": "VARCHAR(255)"},
 }
 
 
@@ -558,6 +632,13 @@ def import_numbers(data: List[NumberImport], db: Session = Depends(get_db)):
 def simulate_register(number_id: int, db: Session):
     number = db.query(NumberPool).filter_by(id=number_id).first()
     if not number:
+        return
+    # 注册前自动分配代理 IP（池子空时会尝试从供应商同步一次）
+    proxy = allocate_proxy(db, number, country=number.region or "")
+    if proxy is None and PROXY_REQUIRED:
+        number.status = "failed"
+        db.commit()
+        print(f"[register] 号码 #{number.id} 失败：没有可用代理（PROXY_REQUIRED=true）", flush=True)
         return
     number.status = "registering"
     db.commit()
@@ -1173,9 +1254,9 @@ def fail_task(db: Session, task: MassSendTask, reason: str, account_id: int = 0)
 def real_mass_send(task_id: int, db: Session):
     """真实发送：把消息通过 127.0.0.1:5000 的 wasock Node 服务发出去。
 
-    分工：wasock 会话（扫码、保持在线）由 connect_whatsapp.py 负责，
-    后端只负责发指令，因此这里既不 import wasock，也不会去拉起/重启 Node 服务。
-    前置条件：connect_whatsapp.py 正在运行且已扫码登录。
+    发送走 send_message()，由 MESSAGE_PROVIDER 决定用哪个通道
+    （wasock / wsapi / mock），换厂商只改这一层。
+    默认的 wasock 通道要求 connect_whatsapp.py 正在运行且已扫码登录。
 
     与 simulate_mass_send 的差异：
       * 发送前做三道前置校验：Node 服务是否在跑 / 登录态是否有效 / 发送策略是否允许；
@@ -1194,16 +1275,10 @@ def real_mass_send(task_id: int, db: Session):
         fail_task(db, task, "任务没有可用的目标 ID", primary_account_id)
         return
 
-    if not wasock_is_running():
-        fail_task(db, task,
-                  f"wasock Node 服务未运行（{WASOCK_HOST}:{WASOCK_PORT}），"
-                  f"请先运行 python connect_whatsapp.py 并保持它在线", primary_account_id)
-        return
-
-    if not is_wasock_logged_in():
-        fail_task(db, task,
-                  f"没有可用的 WhatsApp 登录态（{WASOCK_AUTH_NAME}/creds.json），"
-                  f"请先运行 connect_whatsapp.py 扫码登录", primary_account_id)
+    # 发消息通道健康检查（wasock / wsapi / mock 各自判定）
+    ready, reason = message_provider_ready()
+    if not ready:
+        fail_task(db, task, reason, primary_account_id)
         return
 
     # 发送策略校验：新设备冷却 / 健康度 / 每日上限，参数来自系统设置
@@ -1229,7 +1304,7 @@ def real_mass_send(task_id: int, db: Session):
         text = render_mass_message(task, target)
         ok, detail = False, ""
         for attempt in range(SEND_RETRY_TIMES + 1):
-            ok, detail = send_via_wasock(target["chat"], text)
+            ok, detail = send_message(target["chat"], text)
             if ok:
                 break
             print(f"[real_mass_send] 任务 #{task.id} 第 {attempt + 1} 次发送失败："
@@ -2184,3 +2259,545 @@ def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db),
     log_operation(db, "update_settings", target=", ".join(prepared.keys()),
                   detail=f"更新 {len(prepared)} 项全局参数", user=user)
     return {"code": 0, "data": settings_snapshot(db)}
+
+
+# ============================================================
+# 第三方资源对接：代理 IP / 接码平台 / 发消息通道 / 账号采购
+# ============================================================
+try:
+    from providers import (ProviderError, get_sms_provider, get_proxy_provider,
+                           get_account_provider, build_message_provider,
+                           parse_proxy_line, test_proxy as test_proxy_conn)
+    PROVIDERS_AVAILABLE = True
+    PROVIDERS_IMPORT_ERROR = ""
+except Exception as _providers_exc:          # providers 包缺失时其余功能照常可用
+    ProviderError = Exception
+    PROVIDERS_AVAILABLE = False
+    PROVIDERS_IMPORT_ERROR = f"{type(_providers_exc).__name__}: {_providers_exc}"
+
+# 没有可用代理时是否要中断注册（默认否：尽力而为，缺代理只记日志）
+PROXY_REQUIRED = os.environ.get("PROXY_REQUIRED", "false").strip().lower() == "true"
+# 发消息通道：wasock（默认）/ wsapi / mock
+MESSAGE_PROVIDER = os.environ.get("MESSAGE_PROVIDER", "wasock").strip().lower()
+_message_provider = None
+
+
+def _require_providers():
+    if not PROVIDERS_AVAILABLE:
+        raise HTTPException(status_code=503, detail=f"providers 包不可用：{PROVIDERS_IMPORT_ERROR}")
+
+
+# ---------------------------------------------------------------- 代理 IP
+def proxy_dict(row: ProxyPool) -> Dict[str, Any]:
+    return {
+        "id": row.id, "host": row.host, "port": row.port,
+        "protocol": row.protocol, "username": row.username,
+        "address": row.address, "country": row.country or "", "asn": row.asn or "",
+        "provider": row.provider or "", "status": row.status,
+        "bound_number_id": row.bound_number_id, "used_count": row.used_count or 0,
+        "ok_count": row.ok_count or 0, "fail_count": row.fail_count or 0,
+        "latency_ms": row.latency_ms, "last_checked_at": _dt(row.last_checked_at),
+        "last_used_at": _dt(row.last_used_at), "created_at": _dt(row.created_at),
+    }
+
+
+def sync_proxy_pool(db: Session, *, limit: int = 50, country: str = "") -> Dict[str, Any]:
+    """从代理供应商拉取代理写入代理池，按 host:port 去重。"""
+    _require_providers()
+    provider = get_proxy_provider()
+    items = provider.list_proxies(limit=limit, country=country)
+    added = updated = 0
+    for info in items:
+        row = db.query(ProxyPool).filter_by(host=info.host, port=info.port).first()
+        if row is None:
+            row = ProxyPool(host=info.host, port=info.port, status="free")
+            db.add(row)
+            added += 1
+        else:
+            updated += 1
+        row.username = info.username or ""
+        row.password = info.password or ""
+        row.protocol = info.protocol or "http"
+        row.country = country or info.country or row.country or ""
+        row.asn = info.asn or ""
+        row.provider = provider.name
+    db.commit()
+    return {"provider": provider.name, "fetched": len(items), "added": added, "updated": updated}
+
+
+def allocate_proxy(db: Session, number: Optional[NumberPool] = None, *,
+                   country: str = "", auto_sync: bool = True) -> Optional[ProxyPool]:
+    """给号码分配一个空闲代理；池子空时先从供应商同步一次。
+
+    分配成功会同时把完整代理地址写进 number_pool.proxy_ip。
+    """
+    def pick() -> Optional[ProxyPool]:
+        query = db.query(ProxyPool).filter(ProxyPool.status == "free")
+        if country:
+            query = query.filter(or_(ProxyPool.country == country, ProxyPool.country == ""))
+        return query.order_by(ProxyPool.id).first()
+
+    proxy = pick()
+    if proxy is None and auto_sync:
+        try:
+            sync_proxy_pool(db)
+        except Exception as exc:
+            print(f"[proxy] 同步代理池失败：{exc}", flush=True)
+        proxy = pick()
+    if proxy is None:
+        return None
+
+    proxy.status = "in_use"
+    proxy.bound_number_id = number.id if number else None
+    proxy.used_count = (proxy.used_count or 0) + 1
+    proxy.last_used_at = datetime.now()
+    if number is not None:
+        number.proxy_ip = proxy.address
+    db.commit()
+    return proxy
+
+
+def release_proxy(db: Session, number_id: int) -> int:
+    """释放某个号码占用的代理。"""
+    rows = db.query(ProxyPool).filter_by(bound_number_id=number_id).all()
+    for row in rows:
+        row.status = "free"
+        row.bound_number_id = None
+    if rows:
+        db.commit()
+    return len(rows)
+
+
+def check_proxy(db: Session, row: ProxyPool, *, target: str = "web.whatsapp.com",
+                port: int = 443) -> Dict[str, Any]:
+    """实测代理连通性并累计成功率（只看端口开着不算，要真正建立隧道）。"""
+    _require_providers()
+    info = parse_proxy_line(f"{row.protocol}://{row.username}:{row.password}@{row.host}:{row.port}")
+    ok, detail = test_proxy_conn(info, target=(target, port)) if info else (False, "代理配置无法解析")
+    row.last_checked_at = datetime.now()
+    if ok:
+        row.ok_count = (row.ok_count or 0) + 1
+        try:
+            row.latency_ms = int(float(detail.replace("s", "")) * 1000)
+        except ValueError:
+            row.latency_ms = None
+    else:
+        row.fail_count = (row.fail_count or 0) + 1
+        row.status = "disabled" if (row.fail_count or 0) >= 3 else row.status
+    db.commit()
+    return {"ok": ok, "detail": detail, "proxy": proxy_dict(row)}
+
+
+# ---------------------------------------------------------------- 接码平台
+def sms_order_dict(row: SmsOrder) -> Dict[str, Any]:
+    return {
+        "id": row.id, "provider": row.provider, "order_id": row.remote_order_id,
+        "phone": row.phone, "phone_digits": row.phone_digits, "service": row.service,
+        "country": row.country, "status": row.status,
+        "price": _money(row.price) if row.price is not None else None,
+        "code": row.code or "", "text": row.text or "", "number_id": row.number_id,
+        "expires_at": _dt(row.expires_at), "created_at": _dt(row.created_at),
+        "updated_at": _dt(row.updated_at),
+    }
+
+
+def apply_sms_order(db: Session, row: SmsOrder, order) -> SmsOrder:
+    """把供应商返回的订单状态写回本地。"""
+    if order.phone:
+        row.phone = order.phone
+        row.phone_digits = order.phone_digits
+    row.status = order.status or row.status
+    if order.price is not None:
+        row.price = _dec(order.price)
+    if order.expires_at:
+        try:
+            row.expires_at = datetime.fromisoformat(str(order.expires_at).replace("Z", "+00:00"))
+            if row.expires_at.tzinfo is not None:
+                row.expires_at = row.expires_at.replace(tzinfo=None)
+        except ValueError:
+            pass
+    code = order.code
+    if code:
+        row.code = code
+        row.text = order.text
+    row.updated_at = datetime.now()
+    db.commit()
+    return row
+
+
+def link_sms_number(db: Session, row: SmsOrder) -> Optional[NumberPool]:
+    """把接码号码写进号码池，方便后续注册流程直接引用。"""
+    digits = row.phone_digits or normalize_phone_simple(row.phone)
+    if not digits:
+        return None
+    number = db.query(NumberPool).filter_by(phone_number=digits).first()
+    if number is None:
+        number = NumberPool(phone_number=digits, source_type="sms_platform",
+                            source_channel=row.provider, number_segment=digits[:6],
+                            region=row.country or "CN", trust_score=40, status="pending")
+        db.add(number)
+        db.commit()
+        db.refresh(number)
+    row.number_id = number.id
+    db.commit()
+    return number
+
+
+def normalize_phone_simple(raw: str) -> str:
+    return "".join(ch for ch in (raw or "") if ch.isdigit())
+
+
+# ---------------------------------------------------------------- 发消息通道
+def _wasock_ready() -> Tuple[bool, str]:
+    if not wasock_is_running():
+        return False, (f"wasock Node 服务未运行（{WASOCK_HOST}:{WASOCK_PORT}），"
+                       f"请先运行 python connect_whatsapp.py 并保持它在线")
+    if not is_wasock_logged_in():
+        return False, (f"没有可用的 WhatsApp 登录态（{WASOCK_AUTH_NAME}/creds.json），"
+                       f"请先运行 connect_whatsapp.py 扫码登录")
+    return True, ""
+
+
+def message_provider_ready() -> Tuple[bool, str]:
+    """发消息前的健康检查，按当前通道分流。"""
+    if MESSAGE_PROVIDER in ("mock",):
+        return True, "模拟发消息通道"
+    if MESSAGE_PROVIDER in ("wsapi", "http", "api"):
+        _require_providers()
+        return get_message_provider().is_ready()
+    return _wasock_ready()
+
+
+def get_message_provider():
+    """发消息通道单例（wasock 的真实实现从本模块注入）。"""
+    global _message_provider
+    if _message_provider is None:
+        _require_providers()
+        _message_provider = build_message_provider(
+            MESSAGE_PROVIDER, wasock_send=send_via_wasock, wasock_ready=_wasock_ready)
+    return _message_provider
+
+
+def send_message(chat_jid: str, text: str) -> Tuple[bool, str]:
+    """发消息的唯一出口：换厂商只改这一层。"""
+    if MESSAGE_PROVIDER in ("mock",):
+        return True, ""
+    if MESSAGE_PROVIDER in ("wsapi", "http", "api"):
+        return get_message_provider().send(chat_jid, text)
+    return send_via_wasock(chat_jid, text)
+
+
+# ---------------------------------------------------------------- 接口：供应商状态
+@app.get("/api/v1/providers/status")
+def providers_status(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if not PROVIDERS_AVAILABLE:
+        return {"code": 0, "data": {"available": False, "error": PROVIDERS_IMPORT_ERROR, "items": []}}
+    items = [
+        get_sms_provider().status().to_dict(),
+        get_proxy_provider().status().to_dict(),
+        get_account_provider().status().to_dict(),
+        get_message_provider().status().to_dict(),
+    ]
+    for item in items:
+        if item["kind"] == "proxy":
+            item["pool"] = {
+                "free": db.query(ProxyPool).filter_by(status="free").count(),
+                "in_use": db.query(ProxyPool).filter_by(status="in_use").count(),
+                "disabled": db.query(ProxyPool).filter_by(status="disabled").count(),
+            }
+    return {"code": 0, "data": {
+        "available": True, "items": items,
+        "config": {"message_provider": MESSAGE_PROVIDER, "proxy_required": PROXY_REQUIRED},
+    }}
+
+
+# ---------------------------------------------------------------- 接口：代理池
+@app.get("/api/v1/proxies")
+def list_proxies(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=200),
+                 status: Optional[str] = None, country: Optional[str] = None,
+                 db: Session = Depends(get_db), user: User = Depends(current_user)):
+    q = db.query(ProxyPool)
+    if status:
+        q = q.filter(ProxyPool.status == status)
+    if country:
+        q = q.filter(ProxyPool.country == country)
+    total = q.count()
+    rows = q.order_by(ProxyPool.id.desc()).offset((page - 1) * size).limit(size).all()
+    return {"code": 0, "data": {"total": total, "page": page, "size": size,
+                                "list": [proxy_dict(r) for r in rows]}}
+
+
+@app.post("/api/v1/proxies/sync")
+def sync_proxies(payload: Optional[Dict[str, Any]] = None, db: Session = Depends(get_db),
+                 user: User = Depends(require_admin)):
+    payload = payload or {}
+    try:
+        result = sync_proxy_pool(db, limit=int(payload.get("limit") or 50),
+                                 country=str(payload.get("country") or ""))
+    except ProviderError as exc:
+        raise HTTPException(status_code=502, detail=f"同步代理失败：{exc}")
+    log_operation(db, "sync_proxy", target=result["provider"],
+                  detail=f"新增 {result['added']} 条代理", user=user)
+    return {"code": 0, "data": result}
+
+
+@app.post("/api/v1/proxies/import")
+def import_proxies(payload: Dict[str, Any], db: Session = Depends(get_db),
+                   user: User = Depends(require_admin)):
+    """手工导入代理：text 每行一个 host:port:user:pass 或 socks5://...。"""
+    _require_providers()
+    lines = str(payload.get("text") or "").replace(";", "\n").replace(",", "\n").split("\n")
+    added = skipped = 0
+    for line in lines:
+        info = parse_proxy_line(line)
+        if info is None:
+            if line.strip():
+                skipped += 1
+            continue
+        if db.query(ProxyPool).filter_by(host=info.host, port=info.port).first():
+            skipped += 1
+            continue
+        db.add(ProxyPool(host=info.host, port=info.port, username=info.username,
+                         password=info.password, protocol=info.protocol,
+                         country=str(payload.get("country") or ""), provider="manual",
+                         status="free"))
+        added += 1
+    db.commit()
+    log_operation(db, "import_proxy", target=f"{added} 条", detail="手工导入代理", user=user)
+    return {"code": 0, "data": {"added": added, "skipped": skipped}}
+
+
+@app.post("/api/v1/proxies/{proxy_id}/test")
+def test_one_proxy(proxy_id: int, db: Session = Depends(get_db),
+                   user: User = Depends(current_user)):
+    row = db.query(ProxyPool).filter_by(id=proxy_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="代理不存在")
+    return {"code": 0, "data": check_proxy(db, row)}
+
+
+@app.post("/api/v1/proxies/{proxy_id}/release")
+def release_one_proxy(proxy_id: int, db: Session = Depends(get_db),
+                      user: User = Depends(current_user)):
+    row = db.query(ProxyPool).filter_by(id=proxy_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="代理不存在")
+    row.status = "free"
+    row.bound_number_id = None
+    db.commit()
+    return {"code": 0, "data": proxy_dict(row)}
+
+
+# ---------------------------------------------------------------- 接口：接码平台
+@app.get("/api/v1/sms/orders")
+def list_sms_orders(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=200),
+                    status: Optional[str] = None, db: Session = Depends(get_db),
+                    user: User = Depends(current_user)):
+    q = db.query(SmsOrder)
+    if status:
+        q = q.filter(SmsOrder.status == status)
+    total = q.count()
+    rows = q.order_by(SmsOrder.id.desc()).offset((page - 1) * size).limit(size).all()
+    return {"code": 0, "data": {"total": total, "page": page, "size": size,
+                                "list": [sms_order_dict(r) for r in rows]}}
+
+
+@app.post("/api/v1/sms/orders")
+def create_sms_order(payload: Optional[Dict[str, Any]] = None, db: Session = Depends(get_db),
+                     user: User = Depends(current_user)):
+    """向接码平台取一个号，并自动写进号码池。"""
+    _require_providers()
+    payload = payload or {}
+    provider = get_sms_provider()
+    service = str(payload.get("service") or "wa")
+    country = str(payload.get("country") or "ID")
+    try:
+        order = provider.request_number(service=service, country=country)
+    except ProviderError as exc:
+        raise HTTPException(status_code=502, detail=f"取号失败：{exc}")
+    row = SmsOrder(provider=provider.name, remote_order_id=order.order_id, phone=order.phone,
+                   phone_digits=order.phone_digits, service=service, country=country,
+                   status=order.status or "waiting",
+                   price=_dec(order.price) if order.price is not None else None)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    link_sms_number(db, row)
+    db.refresh(row)
+    log_operation(db, "create_sms_order", target=row.phone,
+                  detail=f"接码取号（{provider.name}）", user=user)
+    return {"code": 0, "data": sms_order_dict(row)}
+
+
+@app.post("/api/v1/sms/orders/{order_id}/poll")
+def poll_sms_order(order_id: int, db: Session = Depends(get_db),
+                   user: User = Depends(current_user)):
+    """查一次验证码。"""
+    _require_providers()
+    row = db.query(SmsOrder).filter_by(id=order_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="接码订单不存在")
+    if not row.remote_order_id:
+        raise HTTPException(status_code=400, detail="该订单没有远端单号，无法查询")
+    try:
+        order = get_sms_provider().poll(row.remote_order_id)
+    except ProviderError as exc:
+        raise HTTPException(status_code=502, detail=f"查询验证码失败：{exc}")
+    apply_sms_order(db, row, order)
+    db.refresh(row)
+    return {"code": 0, "data": sms_order_dict(row)}
+
+
+@app.post("/api/v1/sms/orders/{order_id}/wait")
+def wait_sms_order(order_id: int, payload: Optional[Dict[str, Any]] = None,
+                   db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """阻塞等待验证码（默认最多 180 秒）。"""
+    _require_providers()
+    payload = payload or {}
+    row = db.query(SmsOrder).filter_by(id=order_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="接码订单不存在")
+    timeout = min(float(payload.get("timeout") or 180), 600.0)
+    result = get_sms_provider().wait_for_code(row.remote_order_id, timeout=timeout,
+                                              interval=float(payload.get("interval") or 5))
+    if result.order:
+        apply_sms_order(db, row, result.order)
+        db.refresh(row)
+    if result.ok:
+        log_operation(db, "sms_code_received", target=row.phone,
+                      detail=f"收到验证码（{row.provider}）", user=user)
+    return {"code": 0, "data": {"ok": result.ok, "code": result.code,
+                                "detail": result.detail, "order": sms_order_dict(row)}}
+
+
+@app.post("/api/v1/sms/orders/{order_id}/cancel")
+def cancel_sms_order(order_id: int, db: Session = Depends(get_db),
+                     user: User = Depends(current_user)):
+    _require_providers()
+    row = db.query(SmsOrder).filter_by(id=order_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="接码订单不存在")
+    if row.status != "waiting":
+        raise HTTPException(status_code=400, detail=f"订单状态为 {row.status}，无法取消")
+    try:
+        ok = get_sms_provider().cancel(row.remote_order_id)
+    except ProviderError as exc:
+        raise HTTPException(status_code=502, detail=f"取消失败：{exc}")
+    if ok:
+        row.status = "cancelled"
+        db.commit()
+    log_operation(db, "cancel_sms_order", target=row.phone, detail="取消接码订单", user=user)
+    return {"code": 0, "data": sms_order_dict(row)}
+
+
+# ---------------------------------------------------------------- 接口：账号采购
+def purchase_order_dict(row: PurchaseOrder) -> Dict[str, Any]:
+    return {
+        "id": row.id, "order_no": row.order_no, "provider": row.provider,
+        "product_id": row.product_id, "product_name": row.product_name,
+        "quantity": row.quantity, "unit_price": _money(row.unit_price),
+        "amount": _money(row.amount), "currency": row.currency, "status": row.status,
+        "accounts": [a for a in (row.accounts or "").split(",") if a],
+        "message": row.message or "", "remark": row.remark or "",
+        "created_by": row.created_by or "",
+        "created_at": _dt(row.created_at), "updated_at": _dt(row.updated_at),
+    }
+
+
+@app.get("/api/v1/purchase/products")
+def list_purchase_products(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    _require_providers()
+    provider = get_account_provider()
+    try:
+        products = provider.list_products()
+    except ProviderError as exc:
+        raise HTTPException(status_code=502, detail=f"获取商品失败：{exc}")
+    return {"code": 0, "data": {"provider": provider.name,
+                                "list": [p.to_dict() for p in products]}}
+
+
+@app.get("/api/v1/purchase/orders")
+def list_purchase_orders(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=200),
+                         status: Optional[str] = None, keyword: Optional[str] = None,
+                         db: Session = Depends(get_db), user: User = Depends(current_user)):
+    q = db.query(PurchaseOrder)
+    if status:
+        q = q.filter(PurchaseOrder.status == status)
+    if keyword:
+        q = q.filter(PurchaseOrder.order_no.contains(keyword)
+                     | PurchaseOrder.product_name.contains(keyword))
+    total = q.count()
+    rows = q.order_by(PurchaseOrder.id.desc()).offset((page - 1) * size).limit(size).all()
+    return {"code": 0, "data": {"total": total, "page": page, "size": size,
+                                "list": [purchase_order_dict(r) for r in rows]}}
+
+
+@app.post("/api/v1/purchase/orders")
+def create_purchase_order(payload: Dict[str, Any], db: Session = Depends(get_db),
+                          user: User = Depends(require_admin)):
+    """创建采购订单。"""
+    _require_providers()
+    product_id = str(payload.get("product_id") or "").strip()
+    if not product_id:
+        raise HTTPException(status_code=400, detail="缺少 product_id")
+    quantity = max(1, int(payload.get("quantity") or 1))
+    provider = get_account_provider()
+    try:
+        products = {p.product_id: p for p in provider.list_products()}
+        result = provider.create_order(product_id, quantity)
+    except ProviderError as exc:
+        raise HTTPException(status_code=502, detail=f"下单失败：{exc}")
+    product = products.get(product_id)
+    row = PurchaseOrder(
+        order_no=result.order_no, provider=provider.name, product_id=product_id,
+        product_name=product.name if product else str(payload.get("product_name") or product_id),
+        quantity=result.quantity or quantity,
+        unit_price=_dec(product.price if product else result.amount / max(1, quantity)),
+        amount=_dec(result.amount), currency=result.currency or "USDT",
+        status=result.status, accounts=",".join(result.accounts),
+        message=result.message, remark=str(payload.get("remark") or ""),
+        created_by=user.username,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    log_operation(db, "create_purchase_order", target=row.order_no,
+                  detail=f"采购 {row.quantity} 个账号（{row.product_name}）", user=user)
+    return {"code": 0, "data": purchase_order_dict(row)}
+
+
+@app.post("/api/v1/purchase/orders/{order_id}/sync")
+def sync_purchase_order(order_id: int, db: Session = Depends(get_db),
+                        user: User = Depends(current_user)):
+    """向供应商查询最新状态（交付后会把账号写进订单）。"""
+    _require_providers()
+    row = db.query(PurchaseOrder).filter_by(id=order_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="采购订单不存在")
+    try:
+        result = get_account_provider().query_order(row.order_no)
+    except ProviderError as exc:
+        raise HTTPException(status_code=502, detail=f"查询订单失败：{exc}")
+    row.status = result.status or row.status
+    row.accounts = ",".join(result.accounts) or row.accounts
+    row.message = result.message or row.message
+    row.quantity = result.quantity or row.quantity
+    if result.amount:
+        row.amount = _dec(result.amount)
+    row.updated_at = datetime.now()
+    db.commit()
+    db.refresh(row)
+    return {"code": 0, "data": purchase_order_dict(row)}
+
+
+@app.delete("/api/v1/purchase/orders/{order_id}")
+def delete_purchase_order(order_id: int, db: Session = Depends(get_db),
+                          user: User = Depends(require_admin)):
+    row = db.query(PurchaseOrder).filter_by(id=order_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="采购订单不存在")
+    order_no = row.order_no
+    db.delete(row)
+    db.commit()
+    log_operation(db, "delete_purchase_order", target=order_no, detail="删除采购订单", user=user)
+    return {"code": 0, "data": {"deleted": 1}}

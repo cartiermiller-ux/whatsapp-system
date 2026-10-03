@@ -456,3 +456,103 @@ export interface InviteTaskDetail {
 export interface BatchIds {
   ids: number[]
 }
+
+/** GET /api/v1/providers/status 明细项 */
+export interface ProviderItem {
+  kind: string
+  name: string
+  configured: boolean
+  mock: boolean
+  detail: string
+  balance: number | null
+  extra: Record<string, unknown>
+  pool?: { free: number; in_use: number; disabled: number }
+}
+
+/** GET /api/v1/providers/status 返回 data */
+export interface ProvidersStatus {
+  available: boolean
+  error?: string
+  items: ProviderItem[]
+  config: { message_provider: string; proxy_required: boolean }
+}
+
+/** GET /api/v1/proxies 列表项 */
+export interface ProxyRow {
+  id: number
+  host: string
+  port: number
+  protocol: string
+  username: string
+  address: string
+  country: string
+  asn: string
+  provider: string
+  status: string
+  bound_number_id: number | null
+  used_count: number
+  ok_count: number
+  fail_count: number
+  latency_ms: number | null
+  last_checked_at: string | null
+  last_used_at: string | null
+  created_at: string | null
+}
+
+/** GET /api/v1/sms/orders 列表项 */
+export interface SmsOrderRow {
+  id: number
+  provider: string
+  order_id: string
+  phone: string
+  phone_digits: string
+  service: string
+  country: string
+  status: string
+  price: number | null
+  code: string
+  text: string
+  number_id: number | null
+  expires_at: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+/** POST /api/v1/sms/orders/{id}/wait 返回 data */
+export interface SmsPollResult {
+  ok: boolean
+  code: string
+  detail: string
+  order: SmsOrderRow
+}
+
+/** GET /api/v1/purchase/products 列表项 */
+export interface ProductRow {
+  product_id: string
+  name: string
+  price: number
+  currency: string
+  country: string
+  stock: number
+  description: string
+}
+
+/** GET /api/v1/purchase/orders 列表项 */
+export interface PurchaseOrderRow {
+  id: number
+  order_no: string
+  provider: string
+  product_id: string
+  product_name: string
+  quantity: number
+  unit_price: number
+  amount: number
+  currency: string
+  status: string
+  accounts: string[]
+  message: string
+  remark: string
+  created_by: string
+  created_at: string | null
+  updated_at: string | null
+}

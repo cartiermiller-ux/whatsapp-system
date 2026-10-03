@@ -55,6 +55,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '拉群任务', icon: 'Connection' },
       },
       {
+        path: 'integrations',
+        name: 'integrations',
+        component: () => import('@/views/IntegrationsView.vue'),
+        meta: { title: '资源对接', icon: 'Link' },
+      },
+      {
         path: 'ads',
         name: 'ads',
         component: () => import('@/views/AdsView.vue'),
