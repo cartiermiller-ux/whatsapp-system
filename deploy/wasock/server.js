@@ -15,13 +15,58 @@ const net = require("net");
 const { isAuthValid } = require("./assets/isauthvalid");
 const { resolveBrowser } = require("./assets/resolvebrowser");
 
+// ---------- 配置来源：环境变量 或 项目目录下的 .env ----------
+// 后端拉起这个进程时会透传环境变量；但如果后端是在配置之前启动的（进程里还留着
+// 旧的 os.environ），环境变量就是空的。所以这里自己再读一遍项目根目录的 .env，
+// 保证「谁拉起它都能拿到代理配置」。
+function readEnvFile() {
+    const candidates = [
+        path.resolve(__dirname, "..", "..", ".env"),   // deploy/wasock/ -> 项目根
+        path.resolve(process.cwd(), ".env"),
+    ];
+    const data = {};
+    for (const file of candidates) {
+        let text;
+        try {
+            text = fs.readFileSync(file, "utf8");
+        } catch (err) {
+            continue;
+        }
+        for (const raw of text.split(/\r?\n/)) {
+            const line = raw.trim();
+            if (!line || line.startsWith("#")) continue;
+            const eq = line.indexOf("=");
+            if (eq < 0) continue;
+            let key = line.slice(0, eq).trim();
+            if (key.startsWith("export ")) key = key.slice(7).trim();
+            let value = line.slice(eq + 1).trim();
+            if (value.length >= 2 && (value[0] === '"' || value[0] === "'")
+                && value[value.length - 1] === value[0]) {
+                value = value.slice(1, -1);
+            }
+            if (key && !(key in data)) data[key] = value;
+        }
+    }
+    return data;
+}
+
+const ENV_FILE = readEnvFile();
+
+function config(name, fallback) {
+    const fromProcess = process.env[name];
+    if (fromProcess !== undefined && fromProcess !== "") return fromProcess;
+    const fromFile = ENV_FILE[name];
+    if (fromFile !== undefined && fromFile !== "") return fromFile;
+    return fallback === undefined ? "" : fallback;
+}
+
 // ---------- 代理支持 ----------
 // 国内服务器直连 web.whatsapp.com 会被黑洞（TCP 握手超时），必须走代理。
-// 通过环境变量开启：
+// 配置方式（环境变量优先，其次项目目录下的 .env）：
 //     WA_PROXY_URL=http://127.0.0.1:7890        HTTP CONNECT 代理
 //     WA_PROXY_URL=socks5://127.0.0.1:10808     SOCKS5（需额外装 socks-proxy-agent）
 // https-proxy-agent 已在 wasock 依赖里，HTTP 代理开箱可用。
-const PROXY_URL = process.env.WA_PROXY_URL || "";
+const PROXY_URL = String(config("WA_PROXY_URL", "")).trim();
 
 function buildProxyAgent() {
     if (!PROXY_URL) {
@@ -72,7 +117,7 @@ async function resolveBaileysVersion() {
         return cachedVersion;
     }
 
-    const override = (process.env.WA_BAILEYS_VERSION || "").trim();
+    const override = String(config("WA_BAILEYS_VERSION", "")).trim();
     if (override) {
         const parts = override.split(".").map((n) => Number(n));
         if (parts.length === 3 && parts.every((n) => Number.isInteger(n) && n >= 0)) {
@@ -84,7 +129,7 @@ async function resolveBaileysVersion() {
     }
 
     // WA_VERSION_TIMEOUT_MS=0 表示完全不联网取版本，直接用 Baileys 内置版本
-    const raw = (process.env.WA_VERSION_TIMEOUT_MS || "5000").trim();
+    const raw = String(config("WA_VERSION_TIMEOUT_MS", "5000")).trim();
     const timeoutMs = Number(raw);
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
         console.log("[version] 已跳过在线获取，使用内置版本:", BUNDLED_VERSION.join("."));
@@ -333,7 +378,7 @@ const server = net.createServer((socket) => {
 });
 
 // 端口可用 WA_PORT 覆盖（默认 5000，与 wasock 保持一致）
-const PORT = Number(process.env.WA_PORT || 5000);
+const PORT = Number(config("WA_PORT", "5000") || 5000);
 
 server.listen(PORT, () => {
     console.log("Server running on " + PORT + " port");

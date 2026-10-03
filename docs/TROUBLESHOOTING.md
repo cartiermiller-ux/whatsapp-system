@@ -85,10 +85,27 @@ Baileys 内部会重连，**往往等几分钟后某次重连拿到好 IP 就突
    python -m uvicorn main:app --port 8000
    ```
 
-   后端拉起 Node 时会把 `WA_PROXY_URL` 透传下去，`deploy/wasock/server.js` 用它给
-   Baileys 的 WebSocket 和媒体下载都挂上代理（`agent` / `fetchAgent`）。
-   HTTP 代理开箱可用；SOCKS5 需要额外装包：`npm i -g socks-proxy-agent`。
+   **更推荐写进项目根目录的 `.env`**，不用改环境变量、也不用重启后端：
+
+   ```ini
+   WA_PROXY_URL=socks5://127.0.0.1:10808
+   WA_VERSION_TIMEOUT_MS=5000
+   ```
+
+   `whatsapp_session.py` 和 `deploy/wasock/server.js` 都会在**运行时**读这个文件
+   （环境变量优先于 `.env`），所以改完直接点「启动会话」就生效。
+
+   `deploy/wasock/server.js` 用它给 Baileys 的 WebSocket 和媒体下载都挂上代理
+   （`agent` / `fetchAgent`）。HTTP 代理开箱可用；SOCKS5 需要额外装包，
+   注意要装到 wasock 能找到的位置，例如：
+
+   ```powershell
+   cd "$(python -c "import wasock,pathlib;print(pathlib.Path(wasock.__file__).parent/'node')")"
+   npm install socks-proxy-agent --registry=https://registry.npmmirror.com
+   ```
+
    配好后在面板「账号管理 → 扫码登录 WhatsApp」就能出码。
+   状态里出现 `connected` 就说明号已经上线了。
 
    启动前先体检，一条命令看清链路：
 

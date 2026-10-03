@@ -36,6 +36,47 @@ QR_TIMEOUT = 20.0
 
 
 PROJECT_SERVER_JS = PROJECT_DIR / "deploy" / "wasock" / "server.js"
+ENV_FILE = PROJECT_DIR / ".env"
+
+
+def _read_env_file() -> Dict[str, str]:
+    """读项目目录下的 .env。
+
+    每次调用都重新读盘，所以改完 .env 不用重启后端 —— 下一次启动会话就生效。
+    格式就是最普通的 KEY=VALUE，支持 # 注释、export 前缀和两侧引号。
+    """
+    data: Dict[str, str] = {}
+    try:
+        text = ENV_FILE.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return data
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if key.startswith("export "):
+            key = key[len("export "):].strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        if key:
+            data[key] = value
+    return data
+
+
+def setting(name: str, default: str = "") -> str:
+    """取配置：进程环境变量优先，其次项目目录下的 .env。"""
+    value = os.environ.get(name)
+    if value not in (None, ""):
+        return value
+    return _read_env_file().get(name, default)
+
+
+def proxy_url() -> str:
+    """出口代理地址，形如 socks5://127.0.0.1:10808 或 http://127.0.0.1:7890。"""
+    return setting("WA_PROXY_URL", "").strip()
 
 
 def _wasock_package_dir() -> Optional[Path]:
@@ -214,7 +255,7 @@ class WhatsAppSession:
             # 之前这里会把 error 抹成 idle，失败原因就被藏起来了
             self._state.node_running = is_node_running()
             data = self._state.to_dict()
-            data["proxy_url"] = os.environ.get("WA_PROXY_URL", "")
+            data["proxy_url"] = proxy_url()
             data["server_js"] = "project" if PROJECT_SERVER_JS.is_file() else "wasock"
             return data
 
@@ -281,8 +322,18 @@ class WhatsAppSession:
             env["NODE_PATH"] = modules
         # server.js 默认监听 5000，这里跟随 WASOCK_PORT，避免改了端口后两边对不上
         env["WA_PORT"] = str(WASOCK_PORT)
-        if env.get("WA_PROXY_URL"):
-            print(f"[wasock] 使用代理：{env['WA_PROXY_URL']}", flush=True)
+
+        # 代理和其他 Node 侧配置：环境变量优先，其次项目目录下的 .env
+        proxy = proxy_url()
+        if proxy:
+            env["WA_PROXY_URL"] = proxy
+        for key in ("WA_VERSION_TIMEOUT_MS", "WA_BAILEYS_VERSION"):
+            value = setting(key, "")
+            if value:
+                env[key] = value
+
+        if proxy:
+            print(f"[wasock] 使用代理：{proxy}", flush=True)
         else:
             print("[wasock] 未配置 WA_PROXY_URL，将直连 WhatsApp（国内网络会失败）", flush=True)
         self._process = subprocess.Popen(["node", server_js], creationflags=creation, env=env)
