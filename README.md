@@ -88,17 +88,21 @@ whatsapp-system/
 │   ├── message_provider.py  # 发消息：wasock / wsapi / mock
 │   └── account_provider.py  # 账号采购：mock / http
 ├── deploy/
-│   └── wasock/
-│       ├── server.js        # wasock Node 服务的改良版：代理支持 + 版本号超时兜底
-│       └── assets/          # isauthvalid.js / resolvebrowser.js
+│   ├── server/install.sh    # 服务器端一键部署（venv + systemd + nginx）
+│   ├── package.py           # 打部署包：python deploy/package.py --build
+│   └── wasock/              # 改良版 wasock Node 服务
+│       ├── server.js        #   代理支持 + 版本号超时兜底
+│       └── assets/          #   isauthvalid.js / resolvebrowser.js
 ├── tools/
-│   └── check_network.py     # WhatsApp 连通性体检：DNS / 直连 / 代理隧道 / TLS+WS 握手
+│   ├── check_network.py     # WhatsApp 连通性体检：DNS / 直连 / 代理隧道 / TLS+WS 握手
+│   └── wait_proxy.py        # 守着等代理出现，通到 WhatsApp 就报出来
 ├── env.example.ps1          # 所有对接相关环境变量示例
 ├── requirements.txt         # 后端依赖（wasock 仅登录脚本需要，后端不需要）
 ├── whatsapp_auth/           # ⚠️ WhatsApp 登录态，已在 .gitignore 中，勿提交
 ├── whatsapp.db              # SQLite 数据库，首次启动自动建表 + 种子数据
 ├── docs/
 │   ├── API.md               # 接口文档
+│   ├── DEPLOY.md            # 服务器部署指南（宝塔 / 阿里云）
 │   ├── INTEGRATIONS.md      # 第三方对接说明（代理/接码/发消息/采购）
 │   └── TROUBLESHOOTING.md   # 排障手册（二维码不出、DNS 污染等）
 ├── tests/
