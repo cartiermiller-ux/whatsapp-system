@@ -342,7 +342,22 @@ function pct(part: number, total: number) {
 async function submit() {
   if (!formRef.value) return
   const valid = await formRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) {
+    // 之前这里直接 return，界面上只在输入框下面显示一行小红字，很容易被当成"已经发出去了"
+    ElMessage.warning('还有必填项没填完，请看输入框下面的红色提示')
+    return
+  }
+
+  // 目标 ID 和发送账号不是 el-form 的字段，走不了上面的 rules，这里单独校验。
+  // 不校验的话会建出一个"没有任何发送对象"的任务：界面显示已完成，实际什么都没发。
+  if (!targetIds.value.length) {
+    ElMessage.warning('还没有填目标 ID，这样建出来的任务没有任何发送对象')
+    return
+  }
+  if (!form.account_ids.length) {
+    ElMessage.warning('还没有选发送账号，任务不知道用哪个号发')
+    return
+  }
 
   submitting.value = true
   try {
