@@ -3,151 +3,251 @@
     <div class="page-header">
       <div>
         <h2>数据看板</h2>
-        <div class="sub">今日消息概览 · 账号健康度 · 余额</div>
+        <div class="sub">WhatsApp 群发运营 · 今日概览 · 快捷操作 · 通道状态 · 任务进度</div>
       </div>
-      <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
+      <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
     </div>
 
+    <!-- 错误态：给出原因和重试入口，而不是一片空白 -->
     <el-alert
-      v-if="apiError"
-      type="warning"
+      v-if="loadError"
+      class="section-gap"
+      type="error"
       show-icon
       :closable="false"
-      title="未能连接后端接口，请确认 FastAPI 已在 127.0.0.1:8000 启动。"
-      description="看板数据来自 GET /api/v1/dashboard/today 与 GET /api/v1/accounts。"
-    />
-
-    <div class="filter-bar section-gap">
-      <el-select v-model="filters.country" placeholder="国家 / 区号" style="width: 180px" clearable>
-        <el-option label="中国 +86" value="CN" />
-        <el-option label="美国 +1" value="US" />
-        <el-option label="印度 +91" value="IN" />
-        <el-option label="印尼 +62" value="ID" />
-      </el-select>
-      <el-date-picker
-        v-model="filters.range"
-        type="daterange"
-        range-separator="至"
-        start-placeholder="开始日期"
-        end-placeholder="结束日期"
-        value-format="YYYY-MM-DD"
-      />
-      <el-tag type="info" effect="plain">筛选参数后端暂未支持，接入后生效</el-tag>
-    </div>
-
-    <!-- 今日消息看板 -->
-    <div class="stat-grid">
-      <div class="stat-card">
-        <div class="label">今日已发送</div>
-        <div class="value" style="color: #409eff">{{ today.sent }}</div>
-        <div class="hint">GET /api/v1/dashboard/today</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">今日已送达</div>
-        <div class="value" style="color: #25d366">{{ today.delivered }}</div>
-        <div class="hint">送达率 {{ percent(today.delivered, today.sent) }}</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">今日已阅读</div>
-        <div class="value" style="color: #e6a23c">{{ today.read }}</div>
-        <div class="hint">阅读率 {{ percent(today.read, today.sent) }}</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">账号总数</div>
-        <div class="value">{{ accounts.length }}</div>
-        <div class="hint">GET /api/v1/accounts</div>
-      </div>
-    </div>
-
-    <!-- 账号健康度概览 -->
-    <div class="section-gap">
-      <h3 class="block-title">账号健康度概览</h3>
-      <div class="stat-grid">
-        <div class="stat-card">
-          <div class="label">正常</div>
-          <div class="value" style="color:#25d366">{{ healthCount('normal') }}</div>
+      title="看板数据加载失败"
+      :description="loadError"
+    >
+      <template #default>
+        <div class="error-body">
+          <span>{{ loadError }}</span>
+          <el-button size="small" type="primary" @click="load">重试</el-button>
         </div>
-        <div class="stat-card">
-          <div class="label">观察</div>
-          <div class="value" style="color:#e6a23c">{{ healthCount('watch') }}</div>
-        </div>
-        <div class="stat-card">
-          <div class="label">暂停</div>
-          <div class="value" style="color:#909399">{{ healthCount('paused') }}</div>
-        </div>
-        <div class="stat-card">
-          <div class="label">已封</div>
-          <div class="value" style="color:#f56c6c">{{ healthCount('banned') }}</div>
-        </div>
-      </div>
-    </div>
+      </template>
+    </el-alert>
 
-    <el-row :gutter="16" class="section-gap">
-      <el-col :xs="24" :md="14">
-        <el-card shadow="never">
-          <template #header>账号健康分分布（真实数据）</template>
-          <EChart :option="healthChartOption" :height="280" />
-        </el-card>
-      </el-col>
-      <el-col :xs="24" :md="10">
-        <el-card shadow="never">
-          <template #header>余额概览</template>
-          <div class="balance-value">
-            {{ balance.balance }}
-            <span class="balance-unit">{{ balance.currency }}</span>
+    <!-- ① 今日概览（核心 KPI，一级信息） -->
+    <el-card shadow="never" class="block" v-loading="loading">
+      <template #header>
+        <div class="card-header">
+          <span>今日概览</span>
+          <span class="muted">更新于 {{ updatedAt }}</span>
+        </div>
+      </template>
+      <div class="kpi-grid">
+        <div class="kpi">
+          <div class="kpi-label">今日发送</div>
+          <div class="kpi-value">{{ today.sent }}</div>
+          <div v-if="sendTrend" class="kpi-trend" :class="sendTrend.tone">{{ sendTrend.text }}</div>
+          <div class="kpi-hint">{{ today.tasks }} 个任务</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">成功率</div>
+          <div class="kpi-value" :class="successTone">{{ today.success_rate }}%</div>
+          <div v-if="rateTrend" class="kpi-trend" :class="rateTrend.tone">{{ rateTrend.text }}</div>
+          <div class="kpi-hint">送达 {{ today.delivered }}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">失败数</div>
+          <div class="kpi-value" :class="today.failed > 0 ? 'tone-danger' : ''">
+            {{ today.failed }}
           </div>
-          <div class="hint muted">GET /api/v1/balance</div>
-          <el-button class="section-gap" size="small" @click="goBilling">
-            查看充值 / 消费流水
-          </el-button>
-        </el-card>
-      </el-col>
-    </el-row>
+          <div class="kpi-hint">{{ today.failed > 0 ? '需要关注' : '暂无失败' }}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">账户余额</div>
+          <div class="kpi-value" :class="balanceTone">{{ balance.balance }}</div>
+          <div class="kpi-hint">
+            {{ balance.currency }}
+            <template v-if="balance.pending_orders"> · {{ balance.pending_orders }} 笔待支付</template>
+          </div>
+        </div>
+      </div>
+      <div class="kpi-foot muted">
+        累计发送 {{ total.sent }} 条 · 送达率 {{ total.success_rate }}% · 阅读率 {{ total.read_rate }}%
+      </div>
+    </el-card>
+
+    <!-- ② 快捷操作（主 CTA 固定在第二位，颜色唯一） -->
+    <el-card shadow="never" class="block">
+      <template #header>快捷操作</template>
+      <div class="quick-actions">
+        <el-button type="primary" :icon="Promotion" @click="go('/mass-send')">新建群发</el-button>
+        <el-button :icon="Upload" @click="go('/numbers')">导入号码</el-button>
+        <el-button :icon="Document" @click="go('/ads')">广告文案</el-button>
+        <el-button :icon="Wallet" @click="go('/billing')">余额充值</el-button>
+      </div>
+    </el-card>
+
+    <!-- ③ 通道状态 -->
+    <el-card shadow="never" class="block">
+      <template #header>
+        <div class="card-header">
+          <span>通道状态</span>
+          <el-button link type="primary" @click="go('/integrations')">配置</el-button>
+        </div>
+      </template>
+      <div class="channel-grid">
+        <div v-for="item in providers" :key="item.kind" class="channel">
+          <span class="dot" :class="item.configured ? 'dot-ok' : 'dot-warn'"></span>
+          <span class="channel-name">{{ PROVIDER_KIND_LABEL[item.kind] || item.kind }}</span>
+          <span class="channel-meta muted">{{ item.mock ? '模拟' : item.name }}</span>
+        </div>
+        <div v-if="!providers.length" class="channel muted">未获取到通道状态</div>
+      </div>
+    </el-card>
+
+    <!-- ④ 任务列表 -->
+    <el-card shadow="never" class="block">
+      <template #header>
+        <div class="card-header">
+          <span>{{ activeTasks.length ? '进行中任务' : '最近任务' }}</span>
+          <el-button link type="primary" @click="go('/mass-send')">全部任务</el-button>
+        </div>
+      </template>
+      <el-table v-loading="loading" :data="taskRows" stripe>
+        <el-table-column prop="task_name" label="任务" min-width="160" show-overflow-tooltip />
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="statusTagType(row.status)" size="small">
+              {{ TASK_STATUS_LABEL[row.status] || row.status }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="进度" width="180">
+          <template #default="{ row }">
+            <div class="progress-cell">
+              <el-progress
+                :percentage="Math.min(100, Math.round(row.progress))"
+                :stroke-width="6"
+                :show-text="false"
+                :status="row.status === 'failed' ? 'exception' : undefined"
+              />
+              <span class="muted">{{ row.sent }}/{{ row.targets }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="delivered" label="送达" width="80" />
+        <el-table-column label="失败" width="80">
+          <template #default="{ row }">
+            <span :class="row.failed > 0 ? 'tone-danger' : 'muted'">{{ row.failed }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="创建时间" width="170">
+          <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+        </el-table-column>
+        <template #empty>
+          <el-empty description="还没有群发任务，点上方「新建群发」发起第一波" />
+        </template>
+      </el-table>
+    </el-card>
+
+    <!-- ⑤ 账号健康度：低频信息，折叠收起，不占首屏 -->
+    <el-collapse class="block collapse-block">
+      <el-collapse-item name="health">
+        <template #title>
+          <span class="collapse-title">账号健康度</span>
+          <span class="muted collapse-meta">
+            共 {{ accounts.total }} 个 · 正常 {{ accounts.normal }} · 观察 {{ accounts.watch }} ·
+            暂停 {{ accounts.paused }} · 已封 {{ accounts.banned }}
+          </span>
+        </template>
+        <EChart :option="healthChartOption" :height="240" />
+      </el-collapse-item>
+    </el-collapse>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Refresh } from '@element-plus/icons-vue'
+import { Document, Promotion, Refresh, Upload, Wallet } from '@element-plus/icons-vue'
 import type { EChartsOption } from 'echarts'
-import { dashboardApi, accountApi, billingApi } from '@/api'
-import type { AccountItem, BalanceInfo, DashboardToday } from '@/types/api'
-import { percent } from '@/utils/format'
+import { dashboardApi } from '@/api'
+import type { DashboardMetrics, DashboardOverview, DashboardTaskBrief } from '@/types/api'
+import { PROVIDER_KIND_LABEL, TASK_STATUS_LABEL, formatDateTime, statusTagType } from '@/utils/format'
 import EChart from '@/components/EChart.vue'
 
 const router = useRouter()
 const loading = ref(false)
-const apiError = ref(false)
-const today = ref<DashboardToday>({ sent: 0, delivered: 0, read: 0 })
-const accounts = ref<AccountItem[]>([])
-const balance = ref<BalanceInfo>({
-  balance: 0,
-  currency: 'USDT',
-  total_recharge: 0,
-  total_consume: 0,
-  pending_orders: 0,
-  updated_at: null,
-})
+const loadError = ref('')
 
-const filters = reactive<{ country: string; range: [string, string] | null }>({
-  country: '',
-  range: null,
-})
-
-function healthCount(status: string) {
-  return accounts.value.filter((a) => a.status === status).length
+const EMPTY_METRICS: DashboardMetrics = {
+  tasks: 0,
+  sent: 0,
+  delivered: 0,
+  read: 0,
+  failed: 0,
+  success_rate: 0,
+  read_rate: 0,
 }
 
-const healthChartOption = computed<EChartsOption>(() => {
-  const buckets = { '优 (≥90)': 0, '良 (80-89)': 0, '一般 (60-79)': 0, '差 (<60)': 0 }
-  for (const a of accounts.value) {
-    if (a.health_score >= 90) buckets['优 (≥90)'] += 1
-    else if (a.health_score >= 80) buckets['良 (80-89)'] += 1
-    else if (a.health_score >= 60) buckets['一般 (60-79)'] += 1
-    else buckets['差 (<60)'] += 1
+const today = ref<DashboardMetrics>({ ...EMPTY_METRICS })
+const yesterday = ref<DashboardMetrics>({ ...EMPTY_METRICS })
+const total = ref<DashboardMetrics>({ ...EMPTY_METRICS })
+const balance = ref<DashboardOverview['balance']>({ balance: 0, currency: 'USDT', pending_orders: 0 })
+const accounts = ref<DashboardOverview['accounts']>({
+  total: 0,
+  normal: 0,
+  watch: 0,
+  paused: 0,
+  banned: 0,
+})
+const activeTasks = ref<DashboardTaskBrief[]>([])
+const recentTasks = ref<DashboardTaskBrief[]>([])
+const providers = ref<DashboardOverview['providers']>([])
+const updatedAt = ref('-')
+
+/** 有进行中的就显示进行中，否则显示最近任务 */
+const taskRows = computed(() =>
+  activeTasks.value.length ? activeTasks.value : recentTasks.value,
+)
+
+/* 颜色只表达含义，不做装饰：绿=好、橙=需留意、红=需处理，其余用中性色 */
+const successTone = computed(() => {
+  if (!today.value.sent) return ''
+  if (today.value.success_rate >= 95) return 'tone-success'
+  if (today.value.success_rate >= 80) return 'tone-warning'
+  return 'tone-danger'
+})
+
+/* 二级信息（趋势/对比）：昨天没有数据时不展示，避免出现无意义的数字 */
+function buildTrend(current: number, previous: number) {
+  if (!previous) return null
+  const diff = current - previous
+  if (diff === 0) return { tone: 'kpi-trend-flat', text: '与昨日持平（' + previous + ' 条）' }
+  const pct = Math.round((diff / previous) * 1000) / 10
+  const sign = diff > 0 ? '+' : ''
+  return {
+    tone: diff > 0 ? 'tone-success' : 'tone-warning',
+    text: '较昨日 ' + sign + pct + '%（' + previous + ' 条）',
   }
-  const entries = Object.entries(buckets)
+}
+
+const sendTrend = computed(() => buildTrend(today.value.sent, yesterday.value.sent))
+
+const rateTrend = computed(() => {
+  if (!yesterday.value.sent || !today.value.sent) return null
+  const diff = today.value.success_rate - yesterday.value.success_rate
+  if (Math.abs(diff) < 0.1) return { tone: 'kpi-trend-flat', text: '与昨日持平' }
+  return {
+    tone: diff > 0 ? 'tone-success' : 'tone-warning',
+    text: '较昨日 ' + (diff > 0 ? '+' : '') + diff.toFixed(1) + ' 个百分点',
+  }
+})
+
+const balanceTone = computed(() =>
+  balance.value.balance > 0 && balance.value.balance < 10 ? 'tone-warning' : '',
+)
+
+const healthChartOption = computed<EChartsOption>(() => {
+  const a = accounts.value
+  const entries: Array<[string, number]> = [
+    ['正常', a.normal],
+    ['观察', a.watch],
+    ['暂停', a.paused],
+    ['已封', a.banned],
+  ]
   return {
     tooltip: { trigger: 'axis' },
     grid: { left: 40, right: 20, top: 20, bottom: 30 },
@@ -165,50 +265,207 @@ const healthChartOption = computed<EChartsOption>(() => {
   }
 })
 
-async function loadAll() {
+function go(path: string) {
+  router.push(path)
+}
+
+async function load() {
   loading.value = true
-  apiError.value = false
+  loadError.value = ''
   try {
-    const [t, a, b] = await Promise.all([
-      dashboardApi.today(),
-      accountApi.list(),
-      billingApi.balance(),
-    ])
-    today.value = t
-    accounts.value = a
-    balance.value = b
-  } catch {
-    apiError.value = true
+    const data = await dashboardApi.overview()
+    today.value = data.today
+    yesterday.value = data.yesterday
+    total.value = data.total
+    balance.value = data.balance
+    accounts.value = data.accounts
+    activeTasks.value = data.active_tasks
+    recentTasks.value = data.recent_tasks
+    providers.value = data.providers
+    updatedAt.value = formatDateTime(data.generated_at)
+  } catch (error) {
+    // 拦截器已经提示过一次，这里保留页面内的重试入口
+    loadError.value =
+      (error as { message?: string })?.message || '无法连接后端服务，请确认服务已启动'
   } finally {
     loading.value = false
   }
 }
 
-function goBilling() {
-  router.push('/billing')
-}
-
-onMounted(loadAll)
+onMounted(load)
 </script>
 
 <style scoped>
-.block-title {
-  font-size: 15px;
-  font-weight: 600;
-  margin: 0 0 12px;
+/* 区块之间统一 16px，与全局 --wa-space-4 一致 */
+.block {
+  margin-top: var(--wa-space-4);
 }
 
-.balance-value {
-  font-size: 30px;
+/* ① KPI：统一栅格，四列等高；窄屏退化为两列，不横向挤压 */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--wa-space-4);
+}
+
+@media (max-width: 900px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: var(--wa-space-3);
+  border-left: 2px solid var(--wa-border);
+}
+
+.kpi-label {
+  font-size: var(--wa-font-sm);
+  color: var(--wa-text-muted);
+}
+
+/* 一级信息：大字号高对比 */
+.kpi-value {
+  font-size: 28px;
   font-weight: 700;
-  color: #25d366;
   line-height: 1.2;
+  color: var(--wa-text);
 }
 
-.balance-unit {
-  font-size: 14px;
-  font-weight: 400;
-  color: #909399;
-  margin-left: 6px;
+/* 二级信息：趋势/对比，中等字号 + 辅助色 */
+.kpi-trend {
+  font-size: var(--wa-font-sm);
+  line-height: 1.4;
+}
+
+.kpi-trend-flat {
+  color: var(--wa-text-muted);
+}
+
+/* 三级信息：说明/时间，小字号弱化色 */
+.kpi-hint {
+  font-size: var(--wa-font-xs);
+  color: var(--wa-text-placeholder);
+}
+
+.kpi-foot {
+  margin-top: var(--wa-space-4);
+  padding-top: var(--wa-space-3);
+  border-top: 1px solid var(--wa-border);
+  font-size: var(--wa-font-xs);
+}
+
+.tone-success {
+  color: var(--wa-brand);
+}
+
+.tone-warning {
+  color: var(--wa-warning);
+}
+
+.tone-danger {
+  color: var(--wa-danger);
+}
+
+/* ② 快捷操作：按钮等高等宽，窄屏整行堆叠 */
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wa-space-3);
+}
+
+.quick-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+@media (max-width: 560px) {
+  .quick-actions :deep(.el-button) {
+    flex: 1 1 100%;
+  }
+}
+
+/* ③ 通道状态：小圆点 + 名称 + 来源 */
+.channel-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--wa-space-3);
+}
+
+@media (max-width: 900px) {
+  .channel-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.channel {
+  display: flex;
+  align-items: center;
+  gap: var(--wa-space-2);
+  font-size: var(--wa-font-sm);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.dot-ok {
+  background: var(--wa-brand);
+}
+
+.dot-warn {
+  background: var(--wa-warning);
+}
+
+.channel-name {
+  color: var(--wa-text);
+}
+
+.channel-meta {
+  font-size: var(--wa-font-xs);
+}
+
+/* ④ 任务进度 */
+.progress-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--wa-space-2);
+}
+
+.progress-cell :deep(.el-progress) {
+  flex: 1;
+}
+
+/* ⑤ 折叠区 */
+.collapse-block {
+  border: 1px solid var(--wa-border);
+  border-radius: var(--wa-radius);
+  background: #fff;
+  padding: 0 var(--wa-space-5);
+}
+
+.collapse-block :deep(.el-collapse) {
+  border: none;
+}
+
+.collapse-title {
+  font-weight: 600;
+  color: var(--wa-text);
+}
+
+.collapse-meta {
+  margin-left: var(--wa-space-3);
+  font-size: var(--wa-font-xs);
+}
+
+.error-body {
+  display: flex;
+  align-items: center;
+  gap: var(--wa-space-3);
 }
 </style>

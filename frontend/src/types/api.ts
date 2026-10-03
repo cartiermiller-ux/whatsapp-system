@@ -128,11 +128,46 @@ export interface MassSendTaskRow {
   created_at: string | null
 }
 
-/** GET /api/v1/dashboard/today 返回 data */
-export interface DashboardToday {
+/** 看板指标口径 */
+export interface DashboardMetrics {
+  tasks: number
   sent: number
   delivered: number
   read: number
+  failed: number
+  success_rate: number
+  read_rate: number
+}
+
+/** GET /api/v1/dashboard/today 返回 data */
+export type DashboardToday = DashboardMetrics
+
+/** GET /api/v1/dashboard/overview 列表项 */
+export interface DashboardTaskBrief {
+  id: number
+  task_name: string
+  status: string
+  target_type: string
+  targets: number
+  sent: number
+  delivered: number
+  read: number
+  failed: number
+  progress: number
+  created_at: string | null
+}
+
+/** GET /api/v1/dashboard/overview 返回 data（首页一次请求拿全） */
+export interface DashboardOverview {
+  today: DashboardMetrics
+  yesterday: DashboardMetrics
+  total: DashboardMetrics
+  balance: { balance: number; currency: string; pending_orders: number }
+  accounts: { total: number; normal: number; watch: number; paused: number; banned: number }
+  active_tasks: DashboardTaskBrief[]
+  recent_tasks: DashboardTaskBrief[]
+  providers: ProviderItem[]
+  generated_at: string | null
 }
 
 export interface RegisterBatchResult {

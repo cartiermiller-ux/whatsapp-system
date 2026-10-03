@@ -14,6 +14,7 @@ import type {
   AdminUserUpdateReq,
   BalanceInfo,
   BillingRule,
+  DashboardOverview,
   DashboardToday,
   GlobalSettings,
   GroupRow,
@@ -315,10 +316,14 @@ export const adminApi = {
   },
 }
 
-/** 数据看板 —— GET /api/v1/dashboard/today */
+/** 数据看板 —— /api/v1/dashboard/* */
 export const dashboardApi = {
   today() {
     return request<DashboardToday>({ url: '/dashboard/today', method: 'get' })
+  },
+  /** 首页聚合：一次请求拿到概览 / 余额 / 任务 / 通道状态 */
+  overview() {
+    return request<DashboardOverview>({ url: '/dashboard/overview', method: 'get' })
   },
 }
 

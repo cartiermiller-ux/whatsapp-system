@@ -845,19 +845,6 @@ def get_mass_send(task_id: int, db: Session = Depends(get_db)):
         }
     }
 
-# ---------- 数据看板 ----------
-@app.get("/api/v1/dashboard/today")
-def dashboard_today(db: Session = Depends(get_db)):
-    tasks = db.query(MassSendTask).all()
-    return {
-        "code": 0,
-        "data": {
-            "sent": sum(t.sent for t in tasks),
-            "delivered": sum(t.delivered for t in tasks),
-            "read": sum(t.read_count for t in tasks)
-        }
-    }
-
 # ---------- 登录 ----------
 @app.post("/api/v1/auth/login")
 def login(req: LoginRequest, db: Session = Depends(get_db)):
@@ -2488,15 +2475,15 @@ def send_message(chat_jid: str, text: str) -> Tuple[bool, str]:
 
 
 # ---------------------------------------------------------------- 接口：供应商状态
-@app.get("/api/v1/providers/status")
-def providers_status(db: Session = Depends(get_db), user: User = Depends(current_user)):
+def provider_status_items(db: Session) -> List[Dict[str, Any]]:
+    """四类供应商的状态快照（看板与资源对接页共用）。"""
     if not PROVIDERS_AVAILABLE:
-        return {"code": 0, "data": {"available": False, "error": PROVIDERS_IMPORT_ERROR, "items": []}}
+        return []
     items = [
+        get_message_provider().status().to_dict(),
         get_sms_provider().status().to_dict(),
         get_proxy_provider().status().to_dict(),
         get_account_provider().status().to_dict(),
-        get_message_provider().status().to_dict(),
     ]
     for item in items:
         if item["kind"] == "proxy":
@@ -2505,8 +2492,15 @@ def providers_status(db: Session = Depends(get_db), user: User = Depends(current
                 "in_use": db.query(ProxyPool).filter_by(status="in_use").count(),
                 "disabled": db.query(ProxyPool).filter_by(status="disabled").count(),
             }
+    return items
+
+
+@app.get("/api/v1/providers/status")
+def providers_status(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if not PROVIDERS_AVAILABLE:
+        return {"code": 0, "data": {"available": False, "error": PROVIDERS_IMPORT_ERROR, "items": []}}
     return {"code": 0, "data": {
-        "available": True, "items": items,
+        "available": True, "items": provider_status_items(db),
         "config": {"message_provider": MESSAGE_PROVIDER, "proxy_required": PROXY_REQUIRED},
     }}
 
@@ -2801,3 +2795,88 @@ def delete_purchase_order(order_id: int, db: Session = Depends(get_db),
     db.commit()
     log_operation(db, "delete_purchase_order", target=order_no, detail="删除采购订单", user=user)
     return {"code": 0, "data": {"deleted": 1}}
+
+
+# ---------- 数据看板 ----------
+def aggregate_tasks(tasks: List[MassSendTask]) -> Dict[str, Any]:
+    """把一批任务的计数汇总成看板口径。"""
+    sent = sum(t.sent or 0 for t in tasks)
+    delivered = sum(t.delivered or 0 for t in tasks)
+    read = sum(t.read_count or 0 for t in tasks)
+    return {
+        "tasks": len(tasks), "sent": sent, "delivered": delivered, "read": read,
+        "failed": max(0, sent - delivered),
+        "success_rate": _rate(delivered, sent),
+        "read_rate": _rate(read, delivered),
+    }
+
+
+def task_brief(task: MassSendTask) -> Dict[str, Any]:
+    sent = task.sent or 0
+    delivered = task.delivered or 0
+    targets = len([x for x in (task.target_ids or "").split(",") if x.strip()])
+    return {
+        "id": task.id, "task_name": task.task_name or "", "status": task.status,
+        "target_type": task.target_type or "group", "targets": targets,
+        "sent": sent, "delivered": delivered, "read": task.read_count or 0,
+        "failed": max(0, sent - delivered),
+        "progress": _rate(sent, targets) if targets else 0.0,
+        "created_at": _dt(task.created_at),
+    }
+
+
+@app.get("/api/v1/dashboard/today")
+def dashboard_today(db: Session = Depends(get_db)):
+    """今日概览：只统计今天创建的任务（此前是把所有任务累加，口径不对）。"""
+    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    tasks = db.query(MassSendTask).filter(MassSendTask.created_at >= today_start).all()
+    data = aggregate_tasks(tasks)
+    return {"code": 0, "data": data}
+
+
+@app.get("/api/v1/dashboard/overview")
+def dashboard_overview(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """首页聚合接口：一次请求返回看板需要的全部数据。
+
+    首屏只发一个请求，避免并发多个接口造成的空白等待与错误提示刷屏。
+    """
+    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    yesterday_start = today_start - timedelta(days=1)
+    today_tasks = db.query(MassSendTask).filter(MassSendTask.created_at >= today_start).all()
+    yesterday_tasks = (db.query(MassSendTask)
+                       .filter(MassSendTask.created_at >= yesterday_start,
+                               MassSendTask.created_at < today_start).all())
+    all_tasks = db.query(MassSendTask).all()
+    accounts = db.query(AccountPool).all()
+
+    active_tasks = (db.query(MassSendTask)
+                    .filter(MassSendTask.status.in_(("pending", "running")))
+                    .order_by(MassSendTask.id.desc()).limit(5).all())
+    recent_tasks = db.query(MassSendTask).order_by(MassSendTask.id.desc()).limit(5).all()
+
+    def account_count(status: str) -> int:
+        return len([a for a in accounts if a.status == status])
+
+    providers = provider_status_items(db)
+
+    return {"code": 0, "data": {
+        "today": aggregate_tasks(today_tasks),
+        "yesterday": aggregate_tasks(yesterday_tasks),
+        "total": aggregate_tasks(all_tasks),
+        "balance": {
+            "balance": _money(current_balance(db)),
+            "currency": str(get_setting(db, "currency", "USDT")),
+            "pending_orders": db.query(RechargeOrder).filter_by(status="pending").count(),
+        },
+        "accounts": {
+            "total": len(accounts),
+            "normal": account_count("normal"),
+            "watch": account_count("watch"),
+            "paused": account_count("paused"),
+            "banned": account_count("banned"),
+        },
+        "active_tasks": [task_brief(t) for t in active_tasks],
+        "recent_tasks": [task_brief(t) for t in recent_tasks],
+        "providers": providers,
+        "generated_at": _dt(datetime.now()),
+    }}
