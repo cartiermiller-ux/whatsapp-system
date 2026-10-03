@@ -80,7 +80,7 @@
 whatsapp-system/
 ├── main.py                  # 后端全部代码：模型、初始化、53 个接口
 ├── connect_whatsapp.py      # 扫码登录脚本（终端版）：打印二维码 + 落盘 qr.png
-├── whatsapp_session.py      # 扫码登录（面板版）：管理 Node 会话、接收并渲染二维码
+├── whatsapp_session.py      # 扫码登录（面板版）：多账号会话管理、二维码渲染
 ├── providers/               # 第三方对接层：代理 IP / 接码 / 发消息 / 账号采购
 │   ├── base.py              # HTTP 客户端、错误归一、状态对象
 │   ├── sms_provider.py      # 接码：mock / virtualsms / smsactivate
@@ -212,28 +212,44 @@ connect_whatsapp.py ──启动──> wasock Node 服务 (127.0.0.1:5000) <─
 
 好处：后端不会去拉起第二个 Node 进程抢 5000 端口，也不依赖 wasock 这个 Python 包。
 
-### 扫码登录（面板内，推荐）
+### 扫码登录（面板内，支持多账号）
 
-不用再开终端跑脚本，直接在面板里扫：**账号管理 → 扫码登录 WhatsApp**
+不用再开终端跑脚本，直接在面板里操作：**账号管理 → 扫码登录 WhatsApp**
+
+弹窗里有两个入口，别搞混 —— 这也是最容易误解的地方：
+
+| 按钮 | 用哪个登录态 | 会不会出二维码 |
+|---|---|---|
+| **关联新账号（扫码）** | 每次都用**全新**的空目录（`whatsapp_auth_2`、`_3`…） | **会**，扫完就多一个号 |
+| **使用已登录账号** | 已有账号在用的目录（默认 `whatsapp_auth`） | **不会**（已配对，直接上线） |
+
+> 之所以要分两条路：wasock 的登录态是按目录存放的，目录一旦配对过就不会再出二维码。
+> 所以「想加新号」必须用全新目录，否则点开只会显示「已登录」。
 
 ```text
-点「启动扫码」 → 后端拉起 wasock 的 Node 服务并发起会话
-              → 页面每 3 秒轮询，显示二维码与状态
-              → 手机扫码 → 状态变「已登录」
-              → 点「登记到账号池」→ 该号写入号码池/账号池，群发任务里就能选了
+点「关联新账号」 → 后端挑一个全新的登录态目录并启动会话
+                → 页面每 3 秒轮询，显示二维码与状态
+                → 手机扫码 → 状态变「已登录」
+                → 点「登记到账号池」→ 该号写入号码池/账号池，并记住它用的是哪个目录
 ```
+
+弹窗底部还会列出**其它已关联的账号**，可以一键「使用」切换，或「解绑」删掉登录态。
 
 | 接口 | 说明 |
 |---|---|
-| `GET /api/v1/whatsapp/status` | 会话状态 + 二维码（data URL）+ 是否已登记 |
-| `POST /api/v1/whatsapp/start` | 启动会话，需要时自动拉起 Node 服务 |
+| `GET /api/v1/whatsapp/status` | 会话状态 + 二维码（data URL）+ 当前会话对应的账号 |
+| `GET /api/v1/whatsapp/sessions` | 本机已有的登录态目录及各自对应的账号 |
+| `POST /api/v1/whatsapp/start` | `{mode: "new" 或 "current"}` 启动会话 |
+| `POST /api/v1/whatsapp/switch` | `{account_id}` 切换到某个账号的会话 |
 | `POST /api/v1/whatsapp/stop` | 断开会话（不删登录态） |
-| `POST /api/v1/whatsapp/register-account` | 把扫码登录的号登记进号码池 / 账号池 |
+| `POST /api/v1/whatsapp/register-account` | 登记到号码池/账号池并绑定登录态目录 |
+| `POST /api/v1/whatsapp/unlink` | `{auth_name}` 解绑并删除登录态目录 |
 
 实现见 `whatsapp_session.py`：后端持有那条发过 `start` 的连接（wasock 只会把
 login/connection 事件推给它），收到二维码后让 Node 端渲染成 PNG 再转 data URL。
 
-> ⚠️ Node 服务固定占用 `127.0.0.1:5000`，**同一时间只能有一个会话**。
+> ⚠️ Node 服务固定占用 `127.0.0.1:5000`，**同一时间只能有一个会话** ——
+> 所以多账号是「切换」而不是「并存」，群发时用的是当前会话那个号。
 > 面板扫码期间不要在终端再跑 `connect_whatsapp.py`，否则两边会互相顶；
 > 接口检测到端口被占用时会直接提示，不会硬抢。
 

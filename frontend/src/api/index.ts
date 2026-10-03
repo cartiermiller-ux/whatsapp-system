@@ -1,6 +1,7 @@
 import { request } from './request'
 import type {
   WhatsAppRegisterResult,
+  WhatsAppSessionsResult,
   WhatsAppStatus,
   AccountDetail,
   AccountItem,
@@ -444,9 +445,39 @@ export const whatsappApi = {
   status() {
     return request<WhatsAppStatus>({ url: '/whatsapp/status', method: 'get' })
   },
-  /** 启动会话（需要时后端会拉起 wasock 的 Node 服务） */
-  start() {
-    return request<WhatsAppStatus>({ url: '/whatsapp/start', method: 'post', timeout: 120000 })
+  /** 本机已有的登录态目录及其对应账号 */
+  sessions() {
+    return request<WhatsAppSessionsResult>({ url: '/whatsapp/sessions', method: 'get' })
+  },
+  /**
+   * 启动会话（需要时后端会拉起 wasock 的 Node 服务）
+   * mode="new" 用全新登录态目录，必然出二维码，用于关联新账号；
+   * mode="current" 用已登录的目录，直接以该号上线。
+   */
+  start(mode: 'new' | 'current' = 'current') {
+    return request<WhatsAppStatus>({
+      url: '/whatsapp/start',
+      method: 'post',
+      data: { mode },
+      timeout: 120000,
+    })
+  },
+  /** 切换到某个账号的会话（同一时间只能有一个会话） */
+  switchAccount(accountId: number) {
+    return request<WhatsAppStatus>({
+      url: '/whatsapp/switch',
+      method: 'post',
+      data: { account_id: accountId },
+      timeout: 120000,
+    })
+  },
+  /** 解绑：删除登录态目录 */
+  unlink(authName: string) {
+    return request<{ removed: boolean; auth_name: string; message: string }>({
+      url: '/whatsapp/unlink',
+      method: 'post',
+      data: { auth_name: authName },
+    })
   },
   stop() {
     return request<WhatsAppStatus>({ url: '/whatsapp/stop', method: 'post' })

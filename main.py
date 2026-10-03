@@ -59,6 +59,7 @@ class AccountPool(Base):
     nurture_stage = Column(String(20), default="none")
     health_score = Column(Integer, default=100)
     status = Column(String(20), default="normal")
+    session_name = Column(String(64), default="")   # 该账号用的 WhatsApp 登录态目录
     created_at = Column(DateTime, default=datetime.now)
 
 class MassSendTask(Base):
@@ -474,6 +475,8 @@ REQUIRED_COLUMNS: Dict[str, Dict[str, str]] = {
     "mass_send_task": {"target_type": "VARCHAR(20) DEFAULT 'group'"},
     # 注册时自动分配的代理，存完整代理地址（http://user:pass@host:port）
     "number_pool": {"proxy_ip": "VARCHAR(255)"},
+    # 该账号用的是哪个 WhatsApp 登录态目录（支持多账号）
+    "account_pool": {"session_name": "VARCHAR(64) DEFAULT ''"},
 }
 
 
@@ -2264,7 +2267,9 @@ except Exception as _providers_exc:          # providers 包缺失时其余功�
 
 # 没有可用代理时是否要中断注册（默认否：尽力而为，缺代理只记日志）
 try:
-    from whatsapp_session import get_session, is_node_running, read_paired_phone
+    from whatsapp_session import (get_session, is_node_running, read_paired_phone,
+                                   next_auth_name, list_auth_dirs, remove_auth_dir,
+                                   DEFAULT_AUTH_NAME)
     WHATSAPP_SESSION_AVAILABLE = True
 except Exception as _session_exc:              # 缺 wasock 时其余功能照常
     WHATSAPP_SESSION_AVAILABLE = False
@@ -2792,17 +2797,27 @@ def sync_purchase_order(order_id: int, db: Session = Depends(get_db),
 
 
 # ============================================================
-# 面板内扫码登录 WhatsApp
+# 面板内扫码登录 WhatsApp（支持多个账号）
 # ============================================================
+def current_session_name() -> str:
+    if not WHATSAPP_SESSION_AVAILABLE:
+        return ""
+    return get_session().snapshot().get("auth_name") or ""
+
+
 def whatsapp_status_dict(db: Session) -> Dict[str, Any]:
-    """会话状态 + 二维码（data URL）+ 是否已登记到账号池。"""
+    """会话状态 + 二维码 + 当前会话对应的账号。"""
     if not WHATSAPP_SESSION_AVAILABLE:
         return {"status": "unavailable", "qr_image": "", "node_running": False,
-                "registered": False, "paired_phone": "",
+                "registered": False, "paired_phone": "", "auth_name": "",
+                "account_id": None, "number_id": None,
                 "hint": f"会话模块不可用：{WHATSAPP_SESSION_ERROR}"}
     status = get_session().snapshot()
-    phone = read_paired_phone(status.get("auth_name") or "whatsapp_auth")
+    auth_name = status.get("auth_name") or ""
+    status["auth_name"] = auth_name
+    phone = read_paired_phone(auth_name) if auth_name else ""
     status["paired_phone"] = phone
+
     number = db.query(NumberPool).filter_by(phone_number=phone).first() if phone else None
     account = None
     if number is not None:
@@ -2814,21 +2829,48 @@ def whatsapp_status_dict(db: Session) -> Dict[str, Any]:
     status["account_id"] = account.id if account else None
     status["registered"] = account is not None
 
-    # 给出下一步该做什么，避免用户对着状态干等
-    if status["status"] == "waiting_qr":
-        status["hint"] = "手机 WhatsApp → 设置 → 已关联的设备 → 关联新设备，扫描二维码"
+    # 这个登录态目录已经配过号、而当前会话又不是它 —— 说明可以切过去
+    if not auth_name and phone:
+        status["hint"] = "已有登录态，点「使用已登录账号」接入"
+    elif status["status"] == "waiting_qr":
+        if phone:
+            # 已配对的目录不会再有二维码，这里必须说清楚，否则用户会以为卡住了
+            status["hint"] = (f"正在以 {phone} 上线…这个登录态已经配对过，不会再出二维码。"
+                              f"想关联别的号请点「关联新账号（扫码）」")
+        else:
+            status["hint"] = "手机 WhatsApp → 设置 → 已关联的设备 → 关联新设备，扫描二维码"
     elif status["status"] == "connected":
-        status["hint"] = ("已登录，点「登记到账号池」即可用于群发" if not status["registered"]
-                          else "已登录，且已登记到账号池")
+        if status["registered"]:
+            status["hint"] = f"已以 {phone} 上线，并已登记为账号 #{account.id}"
+        else:
+            status["hint"] = "已登录，点「登记到账号池」即可用于群发"
     elif status["status"] == "starting":
         status["hint"] = "正在建立会话，稍候…"
     elif status["status"] in ("error", "closed"):
-        status["hint"] = status.get("last_error") or "会话已断开，可重新点「启动扫码」"
+        status["hint"] = status.get("last_error") or "会话已断开，可重新启动"
     elif not status["node_running"]:
-        status["hint"] = "点「启动扫码」开始；若终端里正跑着 connect_whatsapp.py，请先关掉它"
+        status["hint"] = "点「关联新账号」扫码，或点「使用已登录账号」接入已有的号"
     else:
-        status["hint"] = status.get("last_error") or "服务已在运行，点「启动扫码」接入"
+        status["hint"] = status.get("last_error") or "服务已在运行，点「使用已登录账号」接入"
     return status
+
+
+def pick_start_auth_name(mode: str, want: str, db: Session) -> str:
+    """决定这次用哪个登录态目录。
+
+    new     -> 一个全新的空目录，必然会出二维码（用于关联新账号）
+    current -> 已登记账号在用的目录；没有就用默认目录
+    """
+    if mode == "new":
+        return next_auth_name()
+    if want:
+        return want
+    account = (db.query(AccountPool)
+               .filter(AccountPool.session_name.isnot(None), AccountPool.session_name != "")
+               .order_by(AccountPool.id).first())
+    if account and account.session_name:
+        return account.session_name
+    return DEFAULT_AUTH_NAME
 
 
 @app.get("/api/v1/whatsapp/status")
@@ -2837,20 +2879,76 @@ def whatsapp_status(db: Session = Depends(get_db), user: User = Depends(current_
     return {"code": 0, "data": whatsapp_status_dict(db)}
 
 
+@app.get("/api/v1/whatsapp/sessions")
+def whatsapp_sessions(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """本机已有的登录态目录，以及各自对应的账号。"""
+    if not WHATSAPP_SESSION_AVAILABLE:
+        return {"code": 0, "data": {"list": [], "active": "", "next": ""}}
+    active = current_session_name()
+    items = list_auth_dirs()
+    for item in items:
+        phone = item.get("paired_phone") or ""
+        number = db.query(NumberPool).filter_by(phone_number=phone).first() if phone else None
+        account = None
+        if number is not None:
+            account = (db.query(AccountPool).filter_by(id=number.account_id).first()
+                       if number.account_id else None)
+            if account is None:
+                account = db.query(AccountPool).filter_by(number_id=number.id).first()
+        item["account_id"] = account.id if account else None
+        item["number_id"] = number.id if number else None
+        item["active"] = item["auth_name"] == active
+    return {"code": 0, "data": {"list": items, "active": active,
+                                "next": next_auth_name()}}
+
+
 @app.post("/api/v1/whatsapp/start")
-def whatsapp_start(db: Session = Depends(get_db), user: User = Depends(current_user)):
-    """启动会话：需要时拉起 Node 服务，然后等待二维码。"""
+def whatsapp_start(payload: Optional[Dict[str, Any]] = None, db: Session = Depends(get_db),
+                   user: User = Depends(current_user)):
+    """启动会话。
+
+    body { mode: "new" | "current", auth_name?: string }
+      new     -> 用全新目录，出二维码，用于关联新账号
+      current -> 用已有账号的目录（默认），直接以该号上线，不出二维码
+    """
     if not WHATSAPP_SESSION_AVAILABLE:
         raise HTTPException(status_code=503, detail=f"会话模块不可用：{WHATSAPP_SESSION_ERROR}")
+    payload = payload or {}
+    mode = str(payload.get("mode") or "current").strip().lower()
+    auth_name = pick_start_auth_name(mode, str(payload.get("auth_name") or "").strip(), db)
+
     current = whatsapp_status_dict(db)
-    # 端口被别的东西占着（通常是终端里的 connect_whatsapp.py），提示而不是硬抢
     if (current["node_running"] and not current.get("node_owned")
-            and current["status"] in ("idle", "error")):
+            and not current["auth_name"] and current["status"] in ("idle", "error")):
         current["hint"] = ("127.0.0.1:5000 已被占用，通常是终端里的 connect_whatsapp.py 正在运行。"
                            "请先关掉它再启动，避免两个会话互相顶掉")
         return {"code": 0, "data": current}
-    get_session().start()
-    log_operation(db, "whatsapp_start", target="whatsapp", detail="启动扫码会话", user=user)
+
+    get_session().start(auth_name)
+    log_operation(db, "whatsapp_start", target=auth_name,
+                  detail=f"启动扫码会话（{mode}）", user=user)
+    return {"code": 0, "data": whatsapp_status_dict(db)}
+
+
+@app.post("/api/v1/whatsapp/switch")
+def whatsapp_switch(payload: Dict[str, Any], db: Session = Depends(get_db),
+                    user: User = Depends(current_user)):
+    """切换到某个账号的会话（wasock 同一时间只能有一个会话，所以是切换而不是并存）。"""
+    if not WHATSAPP_SESSION_AVAILABLE:
+        raise HTTPException(status_code=503, detail=f"会话模块不可用：{WHATSAPP_SESSION_ERROR}")
+    account_id = payload.get("account_id")
+    account = db.query(AccountPool).filter_by(id=account_id).first() if account_id else None
+    if account is None:
+        raise HTTPException(status_code=404, detail="账号不存在")
+    if not account.session_name:
+        raise HTTPException(status_code=400,
+                            detail=f"账号 #{account.id} 没有绑定登录态，请先用「关联新账号」扫码")
+    if not (Path(account.session_name) / "creds.json").is_file():
+        raise HTTPException(status_code=400,
+                            detail=f"账号 #{account.id} 的登录态目录不存在（{account.session_name}），需要重新扫码")
+    get_session().start(account.session_name)
+    log_operation(db, "whatsapp_switch", target=account.session_name,
+                  detail=f"切换到账号 #{account.id}", user=user)
     return {"code": 0, "data": whatsapp_status_dict(db)}
 
 
@@ -2866,10 +2964,11 @@ def whatsapp_stop(db: Session = Depends(get_db), user: User = Depends(current_us
 @app.post("/api/v1/whatsapp/register-account")
 def whatsapp_register_account(db: Session = Depends(get_db),
                               user: User = Depends(require_admin)):
-    """把已扫码登录的号登记进号码池 / 账号池，之后可直接用于群发。"""
+    """把当前会话的号登记进号码池 / 账号池，并记住它用的是哪个登录态目录。"""
     if not WHATSAPP_SESSION_AVAILABLE:
         raise HTTPException(status_code=503, detail=f"会话模块不可用：{WHATSAPP_SESSION_ERROR}")
-    phone = read_paired_phone()
+    auth_name = current_session_name()
+    phone = read_paired_phone(auth_name) if auth_name else ""
     if not phone:
         raise HTTPException(status_code=400, detail="还没有完成扫码登录，无法登记")
 
@@ -2897,18 +2996,42 @@ def whatsapp_register_account(db: Session = Depends(get_db),
         db.commit()
         db.refresh(account)
         number.account_id = account.id
-        db.commit()
     else:
         account.nurture_stage = "ready"
         account.status = "normal"
-        db.commit()
+    # 记住这个账号对应哪个登录态目录，之后才能一键切回来
+    account.session_name = auth_name
+    db.commit()
 
     log_operation(db, "whatsapp_register_account", target=phone,
-                  detail=f"扫码登录的号已登记为账号 #{account.id}", user=user)
+                  detail=f"扫码登录的号已登记为账号 #{account.id}（登录态 {auth_name}）", user=user)
     return {"code": 0, "data": {
         "number_id": number.id, "account_id": account.id, "phone": phone,
-        "message": f"已登记为账号 #{account.id}，可在群发任务里选择",
+        "auth_name": auth_name,
+        "message": f"已登记为账号 #{account.id}（登录态 {auth_name}），可在群发任务里选择",
     }}
+
+
+@app.post("/api/v1/whatsapp/unlink")
+def whatsapp_unlink(payload: Optional[Dict[str, Any]] = None, db: Session = Depends(get_db),
+                    user: User = Depends(require_admin)):
+    """解绑：删除登录态目录（不可恢复，手机上也要移除该设备）。"""
+    if not WHATSAPP_SESSION_AVAILABLE:
+        raise HTTPException(status_code=503, detail=f"会话模块不可用：{WHATSAPP_SESSION_ERROR}")
+    payload = payload or {}
+    auth_name = str(payload.get("auth_name") or current_session_name()).strip()
+    if not auth_name:
+        raise HTTPException(status_code=400, detail="没有指定要解绑的登录态")
+    if auth_name == current_session_name():
+        get_session().stop()
+    removed = remove_auth_dir(auth_name)
+    # 清掉账号上的绑定
+    for account in db.query(AccountPool).filter_by(session_name=auth_name).all():
+        account.session_name = ""
+    db.commit()
+    log_operation(db, "whatsapp_unlink", target=auth_name, detail="解绑登录态", user=user)
+    return {"code": 0, "data": {"removed": removed, "auth_name": auth_name,
+                                "message": f"已删除登录态目录 {auth_name}"}}
 
 
 @app.delete("/api/v1/purchase/orders/{order_id}")

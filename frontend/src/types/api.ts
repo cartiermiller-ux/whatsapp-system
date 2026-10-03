@@ -620,3 +620,21 @@ export interface WhatsAppRegisterResult {
   phone: string
   message: string
 }
+
+/** GET /api/v1/whatsapp/sessions 列表项 */
+export interface WhatsAppSessionItem {
+  auth_name: string
+  paired_phone: string
+  paired: boolean
+  files: number
+  account_id: number | null
+  number_id: number | null
+  active: boolean
+}
+
+/** GET /api/v1/whatsapp/sessions 返回 data */
+export interface WhatsAppSessionsResult {
+  list: WhatsAppSessionItem[]
+  active: string
+  next: string
+}

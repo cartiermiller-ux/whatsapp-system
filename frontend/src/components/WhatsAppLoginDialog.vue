@@ -1,8 +1,8 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    title="扫码登录 WhatsApp"
-    width="440px"
+    title="WhatsApp 账号"
+    width="470px"
     :close-on-click-modal="false"
     @update:model-value="(v: boolean) => emit('update:modelValue', v)"
     @open="onOpen"
@@ -19,26 +19,40 @@
         </div>
       </div>
 
-      <!-- 状态 -->
       <div class="status-line">
         <el-tag :type="statusType" size="small" effect="plain">{{ statusLabel }}</el-tag>
         <span v-if="state.paired_phone" class="muted">
-          号码 {{ state.paired_phone }}
-          <template v-if="state.registered">（已是账号 #{{ state.account_id }}）</template>
+          {{ state.paired_phone }}
+          <template v-if="state.registered">（账号 #{{ state.account_id }}）</template>
         </span>
+        <span v-if="state.auth_name" class="muted mono">{{ state.auth_name }}</span>
       </div>
 
       <p class="hint" :class="{ 'hint-error': isProblem }">{{ state.hint }}</p>
+      <p v-if="state.qr_image" class="hint muted">二维码约 20 秒自动轮换，扫不出来就等下一张。</p>
 
-      <p v-if="state.qr_image" class="hint muted">
-        二维码约 20 秒自动轮换，扫不出来就等下一张。
-      </p>
+      <!-- 已有关联过的账号：一键切换 -->
+      <div v-if="otherSessions.length" class="sessions">
+        <div class="sessions-title muted">其它已关联的账号</div>
+        <div v-for="item in otherSessions" :key="item.auth_name" class="session-row">
+          <span class="mono">{{ item.paired_phone || item.auth_name }}</span>
+          <span class="muted">账号 #{{ item.account_id }}</span>
+          <el-button link type="primary" :disabled="busy" @click="switchTo(item)">使用</el-button>
+          <el-button link type="danger" :disabled="busy" @click="unlink(item)">解绑</el-button>
+        </div>
+      </div>
     </div>
 
     <template #footer>
       <el-button @click="emit('update:modelValue', false)">关闭</el-button>
-      <el-button v-if="canStart" type="primary" :loading="busy" @click="start">启动扫码</el-button>
       <el-button v-if="canStop" :loading="busy" @click="stop">停止</el-button>
+
+      <!-- 未启动：明确给出两条路，避免"点开就已经登录"的困惑 -->
+      <template v-if="canStart">
+        <el-button :loading="busy" @click="start('current')">使用已登录账号</el-button>
+        <el-button type="primary" :loading="busy" @click="start('new')">关联新账号（扫码）</el-button>
+      </template>
+
       <el-button
         v-if="state.status === 'connected' && !state.registered"
         type="primary"
@@ -53,12 +67,12 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Iphone, Loading } from '@element-plus/icons-vue'
 import { whatsappApi } from '@/api'
-import type { WhatsAppStatus } from '@/types/api'
+import type { WhatsAppSessionItem, WhatsAppStatus } from '@/types/api'
 
-const props = defineProps<{ modelValue: boolean }>()
+defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean]; registered: [] }>()
 
 const POLL_MS = 3000
@@ -82,6 +96,7 @@ const empty: WhatsAppStatus = {
 }
 
 const state = ref<WhatsAppStatus>({ ...empty })
+const sessions = ref<WhatsAppSessionItem[]>([])
 const busy = ref(false)
 let timer: ReturnType<typeof setInterval> | null = null
 
@@ -113,19 +128,29 @@ const statusType = computed(() => {
 })
 const isProblem = computed(() => ['closed', 'error', 'unavailable'].includes(state.value.status))
 const canStart = computed(() =>
-  ['idle', 'closed', 'error'].includes(state.value.status) && state.value.status !== 'unavailable',
+  !['unavailable', 'starting', 'waiting_qr'].includes(state.value.status) || state.value.status === 'idle',
 )
 const canStop = computed(() => ['waiting_qr', 'starting', 'connected'].includes(state.value.status))
+
+/** 除当前会话外，其它已配对、且已登记到账号池的登录态 */
+const otherSessions = computed(() =>
+  sessions.value.filter(
+    (item) => item.paired && item.account_id && item.auth_name !== state.value.auth_name,
+  ),
+)
+
 const emptyText = computed(() => {
   if (busy.value) return '正在建立会话…'
   if (state.value.status === 'connected') return '已登录，无需扫码'
   if (isProblem.value) return '会话未建立'
-  return '点下方「启动扫码」获取二维码'
+  return '点下方按钮开始'
 })
 
 async function load() {
   try {
-    state.value = await whatsappApi.status()
+    const [status, list] = await Promise.all([whatsappApi.status(), whatsappApi.sessions()])
+    state.value = status
+    sessions.value = list.list
   } catch {
     /* 拦截器已提示 */
   }
@@ -152,15 +177,53 @@ function onClosed() {
   stopPolling()
 }
 
-async function start() {
+async function start(mode: 'new' | 'current') {
   busy.value = true
   try {
-    state.value = await whatsappApi.start()
-    if (state.value.status === 'waiting_qr' || state.value.qr_image) {
-      ElMessage.success('会话已启动，请用手机扫码')
+    state.value = await whatsappApi.start(mode)
+    if (mode === 'new' && state.value.status !== 'closed' && state.value.status !== 'error') {
+      ElMessage.success('已用新的登录态启动，请用要关联的手机扫码')
+    } else if (state.value.status === 'connected') {
+      ElMessage.success('已接入已登录的账号')
     } else if (isProblem.value) {
       ElMessage.warning('会话未能建立，请看下方原因')
     }
+    await load()
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    busy.value = false
+  }
+}
+
+async function switchTo(item: WhatsAppSessionItem) {
+  busy.value = true
+  try {
+    state.value = await whatsappApi.switchAccount(item.account_id as number)
+    ElMessage.success('已切换会话')
+    await load()
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    busy.value = false
+  }
+}
+
+async function unlink(item: WhatsAppSessionItem) {
+  try {
+    await ElMessageBox.confirm(
+      `解绑 ${item.paired_phone || item.auth_name}？登录态目录会被删除，手机上也要移除该设备。`,
+      '解绑账号',
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  busy.value = true
+  try {
+    const res = await whatsappApi.unlink(item.auth_name)
+    ElMessage.success(res.message)
+    await load()
   } catch {
     /* 拦截器已提示 */
   } finally {
@@ -173,6 +236,7 @@ async function stop() {
   try {
     state.value = await whatsappApi.stop()
     ElMessage.success('已停止会话')
+    await load()
   } catch {
     /* 拦截器已提示 */
   } finally {
@@ -237,6 +301,8 @@ onBeforeUnmount(stopPolling)
   align-items: center;
   gap: var(--wa-space-2);
   font-size: var(--wa-font-sm);
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .hint {
@@ -250,5 +316,28 @@ onBeforeUnmount(stopPolling)
 
 .hint-error {
   color: var(--wa-danger);
+}
+
+.sessions {
+  width: 100%;
+  border-top: 1px solid var(--wa-border);
+  padding-top: var(--wa-space-3);
+}
+
+.sessions-title {
+  font-size: var(--wa-font-xs);
+  margin-bottom: var(--wa-space-2);
+}
+
+.session-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wa-space-2);
+  font-size: var(--wa-font-sm);
+  padding: 2px 0;
+}
+
+.session-row :deep(.el-button) {
+  margin-left: 0;
 }
 </style>

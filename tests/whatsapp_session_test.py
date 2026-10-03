@@ -147,6 +147,32 @@ check("只看 registered 会误判，这里返回空是预期的", ws.read_paire
 check("creds.json 损坏时返回空", ws.read_paired_phone(str(AUTH)) == "")
 
 print()
+print("===== 2.5 多账号：登录态目录管理 =====")
+# 在一个干净的子目录里验证，避免动到真实登录态
+import tempfile  # noqa: E402
+
+workdir = Path(tempfile.mkdtemp(prefix="wa_dirs_"))
+os.chdir(workdir)
+try:
+    check("目录都不存在时，下一个可用目录就是默认名", ws.next_auth_name("wa") == "wa")
+    (workdir / "wa").mkdir()
+    check("默认名被占用后顺延到 _2", ws.next_auth_name("wa") == "wa_2")
+    (workdir / "wa_2").mkdir()
+    check("继续顺延到 _3", ws.next_auth_name("wa") == "wa_3")
+    (workdir / "wa_2" / "creds.json").write_text(
+        json.dumps({"me": {"id": "8613900000000:1@s.whatsapp.net"}}), encoding="utf-8")
+    dirs = {d["auth_name"]: d for d in ws.list_auth_dirs("wa")}
+    check("list_auth_dirs 能列出全部目录", set(dirs) == {"wa", "wa_2"}, list(dirs))
+    check("能识别出哪个目录已配对", dirs["wa_2"]["paired"] is True and dirs["wa"]["paired"] is False,
+          dirs)
+    check("已配对目录能解析出号码", dirs["wa_2"]["paired_phone"] == "8613900000000", dirs["wa_2"])
+    check("解绑会删除目录", ws.remove_auth_dir("wa") is True and not (workdir / "wa").exists())
+    check("解绑不存在的目录返回 False", ws.remove_auth_dir("not-there") is False)
+finally:
+    os.chdir(Path(__file__).resolve().parent.parent)
+    shutil.rmtree(workdir, ignore_errors=True)
+
+print()
 print("===== 3. 会话流程（假 Node 服务）=====")
 session = ws.WhatsAppSession()
 state = session.start()
@@ -172,6 +198,19 @@ check("事件流有记录", any(e["event"] == "login" for e in session.snapshot(
 
 session.stop()
 check("stop 后回到 idle", session.snapshot()["status"] == "idle", session.snapshot()["status"])
+check("stop 后仍记得上次用的登录态目录", session.snapshot()["auth_name"] != "",
+      session.snapshot()["auth_name"])
+
+print()
+print("===== 3.5 换目录启动（关联新账号的基础）=====")
+session_a = ws.WhatsAppSession()
+state_a = session_a.start("dir_a")
+check("用 dir_a 启动后 auth_name 为 dir_a", state_a["auth_name"] == "dir_a", state_a["auth_name"])
+state_b = session_a.start("dir_b")
+check("换目录启动后 auth_name 切到 dir_b", state_b["auth_name"] == "dir_b", state_b["auth_name"])
+check("换目录不会复用旧连接", session_a.snapshot()["status"] in ("waiting_qr", "starting"),
+      session_a.snapshot()["status"])
+session_a.stop()
 
 print()
 print("===== 4. 连接成功 =====")

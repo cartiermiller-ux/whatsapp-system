@@ -26,7 +26,8 @@ from typing import Any, Dict, Optional
 
 WASOCK_HOST = os.environ.get("WASOCK_HOST", "127.0.0.1")
 WASOCK_PORT = int(os.environ.get("WASOCK_PORT", "5000"))
-AUTH_NAME = os.environ.get("WASOCK_AUTH_NAME", "whatsapp_auth")
+DEFAULT_AUTH_NAME = os.environ.get("WASOCK_AUTH_NAME", "whatsapp_auth")
+AUTH_NAME = DEFAULT_AUTH_NAME          # 兼容旧引用
 LOGGER_LEVEL = os.environ.get("WASOCK_LOGGER_LEVEL", "warn")
 CONNECT_TIMEOUT = 8.0
 START_TIMEOUT = 40.0        # startBaileys 要拉版本、建 socket，给宽一点
@@ -67,7 +68,7 @@ class SessionState:
     last_error: str = ""
     node_running: bool = False
     node_owned: bool = False      # Node 服务是否由后端拉起
-    auth_name: str = AUTH_NAME
+    auth_name: str = ""
     events: list = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -77,6 +78,48 @@ class SessionState:
         )
         data.pop("qr", None)      # 原始串不给接口，页面只需要图片
         return data
+
+
+def next_auth_name(base: str = "") -> str:
+    """给「关联新账号」挑一个尚未使用的登录态目录名。
+
+    已配对的目录里不会再出二维码，所以必须用一个全新的目录才能扫新号。
+    """
+    base = base or DEFAULT_AUTH_NAME
+    existing = {path.name for path in Path(".").glob(f"{base}*") if path.is_dir()}
+    index = 1
+    while True:
+        candidate = base if index == 1 else f"{base}_{index}"
+        if candidate not in existing:
+            return candidate
+        index += 1
+
+
+def list_auth_dirs(base: str = "") -> list:
+    """列出本机已有的登录态目录及其配对号码，供界面展示与切换。"""
+    base = base or DEFAULT_AUTH_NAME
+    result = []
+    for path in sorted(Path(".").glob(f"{base}*")):
+        if not path.is_dir():
+            continue
+        phone = read_paired_phone(str(path))
+        result.append({
+            "auth_name": path.name,
+            "paired_phone": phone,
+            "paired": bool(phone),
+            "files": len([f for f in path.iterdir() if f.is_file()]),
+        })
+    return result
+
+
+def remove_auth_dir(auth_name: str) -> bool:
+    """解绑：删掉登录态目录（不可恢复）。"""
+    import shutil
+    path = Path(auth_name)
+    if not path.is_dir() or path.name in ("", ".", ".."):
+        return False
+    shutil.rmtree(path, ignore_errors=True)
+    return True
 
 
 def read_paired_phone(auth_name: str = "") -> str:
@@ -136,17 +179,31 @@ class WhatsAppSession:
             self._state.node_running = is_node_running()
             return self._state.to_dict()
 
-    def start(self) -> Dict[str, Any]:
-        """启动会话。Node 服务没起就拉起，然后 setup + start 并开始收二维码。"""
+    def start(self, auth_name: str = "") -> Dict[str, Any]:
+        """启动会话。Node 服务没起就拉起，然后 setup + start 并开始收二维码。
+
+        auth_name 指定登录态目录：传一个**全新的目录**就会出二维码（关联新账号），
+        传已配对的目录则直接以该账号上线。不传则沿用上次的目录。
+        """
+        target = auth_name or self._state.auth_name or DEFAULT_AUTH_NAME
         with self._lock:
-            if self._state.status in ("starting", "waiting_qr", "connected") and self._sock:
+            same_dir = (self._state.auth_name == target)
+            if (same_dir and self._state.status in ("starting", "waiting_qr", "connected")
+                    and self._sock):
                 return self._state.to_dict()
+            if self._sock:
+                # 换了目录：先断开旧会话，wasock 同一时间只能有一个
+                self._teardown()
+            self._state.auth_name = target
             self._state.status = "starting"
             self._state.last_error = ""
             self._state.events = []
+            self._state.qr = ""
+            self._state.qr_image = ""
+            self._state.connected_at = None
         try:
             self._ensure_node()
-            self._open_and_start()
+            self._open_and_start(target)
         except Exception as exc:                       # noqa: BLE001 - 统一转成状态
             with self._lock:
                 self._state.status = "error"
@@ -156,9 +213,10 @@ class WhatsAppSession:
 
     def stop(self) -> Dict[str, Any]:
         """断开当前会话（不删除登录态）。"""
+        previous = self._state.auth_name
         self._teardown()
         with self._lock:
-            self._state = SessionState(node_running=is_node_running())
+            self._state = SessionState(node_running=is_node_running(), auth_name=previous)
         return self._state.to_dict()
 
     # ---------------------------------------------------------------- 内部
@@ -186,12 +244,12 @@ class WhatsAppSession:
             time.sleep(0.3)
         raise SessionError("wasock Node 服务启动超时（端口 5000 未被监听）")
 
-    def _open_and_start(self) -> None:
+    def _open_and_start(self, auth_name: str) -> None:
         sock = socket.create_connection((WASOCK_HOST, WASOCK_PORT), CONNECT_TIMEOUT)
         sock.settimeout(START_TIMEOUT)
         try:
             # setup 告诉 Node 端用哪个登录态目录
-            setup = {"action": "setup", "loggerLevel": LOGGER_LEVEL, "authName": AUTH_NAME,
+            setup = {"action": "setup", "loggerLevel": LOGGER_LEVEL, "authName": auth_name,
                      "browserInfo": ["ubuntu", "Chrome", "14.4.1"], "syncFullHistory": False}
             sock.sendall(json.dumps(setup).encode() + b"\n")
             buffer = b""
