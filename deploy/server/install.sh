@@ -32,7 +32,7 @@ else
     LOG_DIR="/var/log/nginx"
 fi
 
-RED='\033[31m'; GREEN='\033[32m'; YELLOW='\033[33m'; BLUE='\033[36m'; NC='\033[0m'
+RED=$'\033[31m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; BLUE=$'\033[36m'; NC=$'\033[0m'
 info()  { echo "${BLUE}[信息]${NC} $*"; }
 ok()    { echo "${GREEN}[完成]${NC} $*"; }
 warn()  { echo "${YELLOW}[注意]${NC} $*"; }
@@ -199,10 +199,10 @@ server {
     location /api/ {
         proxy_pass http://127.0.0.1:$API_PORT;
         proxy_http_version 1.1;
-        proxy_set_header Host              $host;
-        proxy_set_header X-Real-IP         $remote_addr;
-        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host              \$host;
+        proxy_set_header X-Real-IP         \$remote_addr;
+        proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
     }
@@ -210,19 +210,19 @@ server {
     # 接口文档
     location ~ ^/(docs|redoc|openapi\.json) {
         proxy_pass http://127.0.0.1:$API_PORT;
-        proxy_set_header Host $host;
+        proxy_set_header Host \$host;
     }
 
     # ---------- 前端单页应用 ----------
     location / {
-        try_files $uri $uri/ /index.html;
+        try_files \$uri \$uri/ /index.html;
     }
 
     # 静态资源缓存
     location ~* \.(js|css|png|jpg|jpeg|gif|svg|woff2?|ttf|ico)$ {
         expires 7d;
         add_header Cache-Control "public, immutable";
-        try_files $uri =404;
+        try_files \$uri =404;
     }
 }
 EOF

@@ -182,6 +182,43 @@ curl -I http://<IP>/
 
 **结论：这台机器上从未部署过本系统。** 桌面上的 `暗夜社区.txt` 里那行「WhatsApp超链群发 / 后台 `http://120.24.175.80/login`」是计划记录，不是已完成的部署。
 
+### 部署已完成（同一天稍后）
+
+拿到 SSH 权限后已部署并验证通过：
+
+| 项目 | 实际情况 |
+|---|---|
+| 系统 | Ubuntu 26.04.1 LTS（阿里云 ECS，2 核 / 1.7 GB 内存 / 12 GB 可用） |
+| 面板 | 宝塔面板（端口 33416）+ 宝塔自带 nginx（`/www/server/nginx`），**系统 nginx 未使用** |
+| 应用目录 | `/www/wwwroot/whatsapp-system` |
+| nginx 配置 | `/www/server/panel/vhost/nginx/whatsapp.conf`（`listen 80 default_server`） |
+| systemd | `whatsapp-api.service`，已 enable + running |
+| 数据 | 从旧目录 `/www/wwwroot/hkd.us.cc` 继承了 `whatsapp.db`（3 个账号 / 7 个号码）和 `whatsapp_auth`（已配对号码 8618469872661） |
+
+外网实测：
+
+| 请求 | 结果 |
+|---|---|
+| `http://120.24.175.80/` | 200，WhatsApp 运营系统 |
+| `http://120.24.175.80/login` | 200，SPA 路由正常 |
+| `POST /api/v1/auth/login` | 200，返回 token |
+| `http://120.24.175.80/docs` | 200，Swagger |
+
+部署时踩到的两个坑，已在 `install.sh` 里修掉：
+
+1. **Ubuntu 缺 `python3-venv`** → `python3 -m venv` 建出来的环境没有 pip。
+   先 `apt-get install -y python3.14-venv`（脚本里没有自动装，需手动补一次）。
+2. **heredoc 里 `$host` / `$uri` 没转义**：nginx 配置写在 `<<EOF` 里时，
+   bash 会把 `$host` 当自己的变量展开；在 `set -u` 下直接报
+   `host: unbound variable`，结果是配置写成 0 字节。必须写成 `\$host`。
+
+另外，pip 走官方源会卡住，服务器上要用阿里云镜像：
+
+```bash
+export PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+export PIP_TRUSTED_HOST=mirrors.aliyun.com
+```
+
 要拿到宝塔面板入口，在服务器上执行：
 
 ```bash
