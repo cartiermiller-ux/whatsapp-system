@@ -12,10 +12,15 @@ pip install requests
 python tests/real_send_test.py
 \`\`\`
 
-用假 bot 替换 wasock，覆盖：目标解析（含 \`resource_group.id\` 与 \`number_pool.id\` 冲突的场景）、
-文案变量渲染、重试、计数、TaskLog、五条失败与前置校验分支、\`USE_REAL_SEND\` 分流、
-发送间隔取值、登录态判定。共 49 项断言。
-临时库写在 \`tests/.tmp/\`，不会碰 \`whatsapp.db\`。
+脚本会起一个**假的 wasock Node 服务**（复刻 \`node/server.js\` 的"换行分隔 JSON"协议），
+让 \`wasock_request\` / \`send_via_wasock\` / \`real_mass_send\` 走**真实 TCP** 完整跑一遍。覆盖：
+
+- **传输层**：正常发送、请求格式、中文/emoji 不乱码、响应被拆包、响应前穿插事件行、
+  返回非 JSON、服务直接断开、服务返回 \`success=false\`、未监听时的报错
+- **业务层**：目标解析（含 \`resource_group.id\` 与 \`number_pool.id\` 冲突的场景）、文案变量渲染、
+  失败重试、计数与 TaskLog、五条前置校验分支、\`USE_REAL_SEND\` 分流、发送间隔取值、登录态判定
+
+共 **61 项断言**。临时库写在 \`tests/.tmp/\`，不会碰 \`whatsapp.db\`，也不连真实 WhatsApp。
 
 ## 2. 接口回归（P2 模块，109 项断言）
 

@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
-import hashlib, hmac, json, os, random, re, secrets, threading, time
+import hashlib, hmac, json, os, random, re, secrets, socket, time
 
 # ---------- 号码来源类型统一 ----------
 # 对外统一使用英文枚举，兼容历史/手填的中文值
@@ -975,28 +975,21 @@ def get_invite_task(task_id: int, db: Session = Depends(get_db)):
 # ============================================================
 # 真实发送（wasock）—— 由 USE_REAL_SEND 开关控制
 # ============================================================
-# 总开关：保持 False 时群发任务走 simulate_mass_send（模拟发送，不联网）；
-#         置为 True 后走 real_mass_send，通过 wasock 调 WhatsApp 协议真实发送。
-USE_REAL_SEND = False
+# 总开关：默认关闭，群发任务走 simulate_mass_send（模拟发送，不联网）。
+# 打开方式（必须在启动后端之前设好环境变量）：
+#     $env:USE_REAL_SEND="true"; python -m uvicorn main:app --reload
+USE_REAL_SEND = os.environ.get("USE_REAL_SEND", "false").strip().lower() == "true"
 
+# wasock 的会话由 connect_whatsapp.py 负责建立并保持运行，后端只往它的 Node 服务发指令。
+# 这里不 import wasock：后端不需要、也不应该去拉起第二个 Node 进程抢 5000 端口。
+WASOCK_HOST = os.environ.get("WASOCK_HOST", "127.0.0.1")
+WASOCK_PORT = int(os.environ.get("WASOCK_PORT", "5000"))
 WASOCK_AUTH_NAME = "whatsapp_auth"      # 与 connect_whatsapp.py 的登录态目录保持一致
-WASOCK_LOGGER_LEVEL = "warn"            # 排查真实发送时可改成 "debug"
+WASOCK_TIMEOUT = 10.0                   # 普通指令超时
+WASOCK_SEND_TIMEOUT = 60.0              # 发消息超时（群发/大群可能较慢）
 SEND_RETRY_TIMES = 1                    # 单条消息失败后的重试次数
 SEND_RETRY_WAIT = 2.0                   # 重试前等待秒数
 PHONE_PATTERN = re.compile(r"^\d{8,15}$")
-
-try:
-    from wasock import WhatsAppSocket, Browser as WasockBrowser
-    WASOCK_AVAILABLE = True
-    WASOCK_IMPORT_ERROR = ""
-except Exception as _wasock_exc:        # 未安装 wasock 时后端仍可正常跑模拟发送
-    WhatsAppSocket = None
-    WasockBrowser = None
-    WASOCK_AVAILABLE = False
-    WASOCK_IMPORT_ERROR = f"{type(_wasock_exc).__name__}: {_wasock_exc}"
-
-_wasock_bot = None
-_wasock_lock = threading.Lock()
 
 
 def is_wasock_logged_in(auth_name: str = WASOCK_AUTH_NAME) -> bool:
@@ -1019,51 +1012,74 @@ def is_wasock_logged_in(auth_name: str = WASOCK_AUTH_NAME) -> bool:
     return bool(data.get("registered") or (isinstance(me, dict) and me.get("id")))
 
 
-def on_wasock_connection(data):
-    """记录 WhatsApp 连接状态，真实发送出问题时便于定位。"""
-    data = data or {}
-    if data.get("status") == "open":
-        print("[wasock] WhatsApp 连接已建立", flush=True)
-    else:
-        print(f"[wasock] 连接关闭：statusCode={data.get('statusCode')} "
-              f"reason={data.get('reason')}", flush=True)
+def wasock_is_running(timeout: float = 2.0) -> bool:
+    """探测 wasock 的 Node 服务是否在监听（连接是否健康）。"""
+    try:
+        with socket.create_connection((WASOCK_HOST, WASOCK_PORT), timeout):
+            return True
+    except OSError:
+        return False
 
 
-def get_wasock_bot():
-    """惰性创建全局 wasock 会话；开关关闭时直接返回 None，不会拉起 Node 服务。
+def wasock_request(payload: Dict[str, Any], timeout: float = WASOCK_TIMEOUT) -> Dict[str, Any]:
+    """向 wasock 的 Node 服务发一条 JSON 行指令并读取响应。
 
-    注意两点：
-      1. wasock 的 Node 服务固定监听 127.0.0.1:5000，一个进程只能有一个会话，
-         因此这里不做多账号并发（account_ids 目前只取首个账号做策略校验与日志归属）。
-      2. 不在应用启动时就连接：避免后端一启动就占用 5000 端口，
-         和手动运行的 connect_whatsapp.py 互相抢占。
+    协议见 wasock 的 node/server.js：TCP + 换行分隔的 JSON。
+      请求  {"action": "sendMessage", "chat": "<jid>", "msg": "<文本>"}
+      响应  {"type": "response", "success": true, "message": ""}
+
+    注意：登录二维码等事件（type=event）只会推给当初发起 start 的那个连接，
+    本连接正常只会收到自己的响应；这里仍做防御性跳过，避免把事件误当响应，
+    同时按行读取，兼容响应被拆包或与事件粘在一起的情况。
     """
-    global _wasock_bot
-    if not USE_REAL_SEND or not WASOCK_AVAILABLE:
-        return None
-    with _wasock_lock:
-        if _wasock_bot is None:
-            bot = WhatsAppSocket(
-                authName=WASOCK_AUTH_NAME,
-                loggerLevel=WASOCK_LOGGER_LEVEL,
-                browserInfo=WasockBrowser.ubuntu("Chrome"),
-            )
-            bot.on("connection", on_wasock_connection)
-            # 不能用 bot.start()：它内部会 input() 阻塞线程，服务端没有交互终端
-            bot.nodeJS.send({"action": "start"})
-            _wasock_bot = bot
-        return _wasock_bot
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8") + b"\n"
+    with socket.create_connection((WASOCK_HOST, WASOCK_PORT), timeout) as sock:
+        sock.settimeout(timeout)
+        sock.sendall(data)
+        buffer = b""
+        deadline = time.monotonic() + timeout
+        while True:
+            while b"\n" not in buffer:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    raise ConnectionError("wasock 服务关闭了连接")
+                buffer += chunk
+                if len(buffer) > 1 << 20:
+                    raise ValueError("wasock 响应过大")
+            line, buffer = buffer.split(b"\n", 1)
+            text = line.decode("utf-8", "ignore").strip()
+            if not text:
+                continue
+            message = json.loads(text)
+            if isinstance(message, dict) and ("success" in message or message.get("type") == "response"):
+                return message
+            if time.monotonic() > deadline:
+                raise TimeoutError("等待 wasock 响应超时")
 
 
-def close_wasock_bot():
-    """关闭全局 wasock 会话（测试或需要重新扫码时调用）。"""
-    global _wasock_bot
-    with _wasock_lock:
-        if _wasock_bot is not None:
-            try:
-                _wasock_bot.end()
-            finally:
-                _wasock_bot = None
+def send_via_wasock(chat_jid: str, message: str) -> Tuple[bool, str]:
+    """通过已在运行的 wasock 服务发一条消息，返回 (是否成功, 失败原因)。
+
+    比用户的原始版本多返回一个失败原因：任务日志和排查都需要它。
+    """
+    if not chat_jid:
+        return False, "缺少 chat id"
+    if not message:
+        return False, "消息内容为空"
+    try:
+        response = wasock_request(
+            {"action": "sendMessage", "chat": chat_jid, "msg": message},
+            timeout=WASOCK_SEND_TIMEOUT,
+        )
+    except TimeoutError:
+        return False, f"等待 wasock 响应超时（{WASOCK_HOST}:{WASOCK_PORT}）"
+    except OSError as exc:
+        return False, f"连接 wasock 服务失败（{WASOCK_HOST}:{WASOCK_PORT}）：{exc}"
+    except ValueError as exc:
+        return False, f"wasock 响应无法解析：{exc}"
+    if response.get("success"):
+        return True, ""
+    return False, str(response.get("message") or "发送失败（wasock 未返回成功）")
 
 
 def to_whatsapp_jid(value: str) -> str:
@@ -1127,22 +1143,6 @@ def render_mass_message(task: MassSendTask, target: Dict[str, Any]) -> str:
     return text.strip()
 
 
-def send_whatsapp_message(bot, chat: str, text: str) -> Tuple[bool, str]:
-    """通过 wasock 发一条消息，对应 node/server.js 的 sendMessage action。"""
-    if not chat:
-        return False, "缺少 chat id"
-    if not text:
-        return False, "消息内容为空"
-    try:
-        response = bot.nodeJS.send({"action": "sendMessage", "chat": chat, "msg": text})
-    except Exception as exc:
-        return False, f"发送异常 {type(exc).__name__}: {exc}"
-    if isinstance(response, dict) and response.get("success"):
-        return True, ""
-    message = response.get("message") if isinstance(response, dict) else response
-    return False, str(message or "发送失败（wasock 未返回成功）")
-
-
 def send_interval_seconds(db: Session) -> float:
     """两条消息之间的随机间隔，取值来自系统设置的 send_interval_min / max。"""
     try:
@@ -1171,10 +1171,14 @@ def fail_task(db: Session, task: MassSendTask, reason: str, account_id: int = 0)
 
 
 def real_mass_send(task_id: int, db: Session):
-    """真实发送：通过 wasock 逐条调用 WhatsApp 协议发送。
+    """真实发送：把消息通过 127.0.0.1:5000 的 wasock Node 服务发出去。
+
+    分工：wasock 会话（扫码、保持在线）由 connect_whatsapp.py 负责，
+    后端只负责发指令，因此这里既不 import wasock，也不会去拉起/重启 Node 服务。
+    前置条件：connect_whatsapp.py 正在运行且已扫码登录。
 
     与 simulate_mass_send 的差异：
-      * 发送前会做登录态 / wasock 可用性 / 发送策略三道前置校验，不满足就 fail 并说明原因；
+      * 发送前做三道前置校验：Node 服务是否在跑 / 登录态是否有效 / 发送策略是否允许；
       * 每条消息按系统设置里的 send_interval_min/max 随机间隔发送，并写 TaskLog；
       * 文案支持 {name} / {phone} / {link} 变量，未写 {link} 时自动附上超链。
     """
@@ -1190,8 +1194,10 @@ def real_mass_send(task_id: int, db: Session):
         fail_task(db, task, "任务没有可用的目标 ID", primary_account_id)
         return
 
-    if not WASOCK_AVAILABLE:
-        fail_task(db, task, f"未安装 wasock（{WASOCK_IMPORT_ERROR}）", primary_account_id)
+    if not wasock_is_running():
+        fail_task(db, task,
+                  f"wasock Node 服务未运行（{WASOCK_HOST}:{WASOCK_PORT}），"
+                  f"请先运行 python connect_whatsapp.py 并保持它在线", primary_account_id)
         return
 
     if not is_wasock_logged_in():
@@ -1208,11 +1214,6 @@ def real_mass_send(task_id: int, db: Session):
             fail_task(db, task, f"账号 #{account.id} 不满足发送策略：{reason}", primary_account_id)
             return
 
-    bot = get_wasock_bot()
-    if bot is None:
-        fail_task(db, task, "wasock 会话初始化失败", primary_account_id)
-        return
-
     task.status = "running"
     db.commit()
 
@@ -1228,7 +1229,7 @@ def real_mass_send(task_id: int, db: Session):
         text = render_mass_message(task, target)
         ok, detail = False, ""
         for attempt in range(SEND_RETRY_TIMES + 1):
-            ok, detail = send_whatsapp_message(bot, target["chat"], text)
+            ok, detail = send_via_wasock(target["chat"], text)
             if ok:
                 break
             print(f"[real_mass_send] 任务 #{task.id} 第 {attempt + 1} 次发送失败："

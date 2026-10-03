@@ -99,9 +99,45 @@ wasock 的 Node 服务**固定监听 127.0.0.1:5000**，而 \`NodeJS\` 的连接
 
 因此：
 
-- 同一时间只跑**一个** \`WhatsAppSocket\`：不要同时开 \`connect_whatsapp.py\` 和后端真实发送
-- 后端**没有**在启动时自动连接 WhatsApp（就是为避免一启动就抢占 5000），
-  而是等真正要发送时才惰性创建会话（\`get_wasock_bot()\`）
+- 同一时间只跑**一个** \`connect_whatsapp.py\`，不要开两份
+- 后端**不创建会话**，它只往 5000 端口发 \`sendMessage\` 指令（见下一节），
+  所以后端和数据登录脚本不会互相抢端口
+
+### 后端报 "wasock Node 服务未运行"
+
+这是真实发送最常见的失败原因。后端发送前会先探一次 \`127.0.0.1:5000\`：
+
+\`\`\`text
+[real_mass_send] 任务 #12 未执行：wasock Node 服务未运行（127.0.0.1:5000），
+                 请先运行 python connect_whatsapp.py 并保持它在线
+\`\`\`
+
+原因：Node 服务是 \`connect_whatsapp.py\` 启动的**子进程**，脚本一退出它就跟着退出。
+所以真实发送期间必须让 \`connect_whatsapp.py\` 一直开着（它最后会进入常驻循环，按 Ctrl+C 才退出）。
+
+快速确认：
+
+\`\`\`powershell
+# 端口在不在
+Get-NetTCPConnection -State Listen | Where-Object { $_.LocalPort -eq 5000 }
+# 后端视角的探测结果
+python -c "import main; print('node running =', main.wasock_is_running())"
+\`\`\`
+
+### 后端如何与 Node 服务通信
+
+不 import wasock，直接走 TCP + 换行分隔 JSON（协议见 \`wasock/node/server.js\`）：
+
+\`\`\`python
+{"action": "sendMessage", "chat": "8613800138000@s.whatsapp.net", "msg": "文本"}
+# 响应 {"type": "response", "success": true, "message": ""}
+\`\`\`
+
+实现见 \`main.py\` 的 \`wasock_request()\` / \`send_via_wasock()\`：按行读取，能容忍响应被拆包，
+并会跳过 \`type=event\` 的事件行（二维码轮换等事件只会推给发起 \`start\` 的那个连接，
+本连接正常只收到自己的响应，跳过只是防御性处理）。
+
+地址和端口可用环境变量覆盖：\`WASOCK_HOST\`、\`WASOCK_PORT\`。
 
 ---
 

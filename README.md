@@ -2,7 +2,7 @@
 
 面向 WhatsApp 批量运营的一体化控制台，覆盖 **号码池 → 注册 → 账号养护 → 资源群 → 群发 / 拉群 → 广告文案 → 余额计费 → 系统设置** 的完整链路。
 
-前后端分离：后端 FastAPI + SQLAlchemy，前端 Vue 3 + TypeScript + Element Plus。真实发送通过 [wasock](https://pypi.org/project/wasock/)（封装 Baileys）接入，**默认关闭**，开箱即跑模拟发送。
+前后端分离：后端 FastAPI + SQLAlchemy，前端 Vue 3 + TypeScript + Element Plus。真实发送通过 [wasock](https://pypi.org/project/wasock/)（封装 Baileys）的 Node 服务接入，**默认关闭**，开箱即跑模拟发送。
 
 > ⚠️ **合规提示**：本系统用于**自有账号**的运营管理。请遵守 WhatsApp 服务条款与当地法律法规，不要用于骚扰或垃圾信息群发。
 
@@ -55,7 +55,7 @@
 | 余额流水 / 充值订单 / 计费规则 | ✅ 真实（到账为人工确认） | 余额 = 全部流水之和 |
 | 用户体系 / 登录 / 改密 / 操作日志 | ✅ 真实 | pbkdf2 加盐散列，改密后旧 token 全部失效 |
 | 系统设置读写 | ✅ 真实 | 保存后立即影响发送策略与充值下单 |
-| 群发发送 | ⚙️ 默认模拟 | \`USE_REAL_SEND=False\` 走 \`simulate_mass_send\`；置 True 走 \`real_mass_send\`（已实现并测试） |
+| 群发发送 | ⚙️ 默认模拟 | 环境变量 \`USE_REAL_SEND\` 控制：关闭走 \`simulate_mass_send\`，打开走 \`real_mass_send\`（已实现并测试） |
 | 批量注册 | 🧪 模拟 | \`simulate_register\`，成功率随机，未接真实注册协议 |
 | 拉群任务 | 🧪 仅建单 | 只写入 \`invite_task\`，暂无执行器 |
 | 群链接获取 | 🧪 占位 | \`POST /groups/fetch-links\` 返回"待 wasock 接入" |
@@ -68,7 +68,7 @@
 
 **后端**：Python 3.11+（开发环境 3.14）、FastAPI、SQLAlchemy 2.x、Pydantic 2、SQLite、Uvicorn
 **前端**：Vue 3、TypeScript、Element Plus、Vite、Pinia、Vue Router、ECharts、axios、dayjs
-**真实发送（可选）**：wasock 0.5.2（Node.js ≥ 18 + Baileys）
+**真实发送（可选）**：wasock 0.5.2 的 Node 服务（Node.js ≥ 18 + Baileys），仅 \`connect_whatsapp.py\` 需要安装
 
 ---
 
@@ -78,7 +78,7 @@
 whatsapp-system/
 ├── main.py                  # 后端全部代码：模型、初始化、53 个接口
 ├── connect_whatsapp.py      # 扫码登录脚本：终端直接打印二维码 + 落盘 qr.png
-├── requirements.txt         # 后端依赖（wasock 可选）
+├── requirements.txt         # 后端依赖（wasock 仅登录脚本需要，后端不需要）
 ├── whatsapp_auth/           # ⚠️ WhatsApp 登录态，已在 .gitignore 中，勿提交
 ├── whatsapp.db              # SQLite 数据库，首次启动自动建表 + 种子数据
 ├── docs/
@@ -170,36 +170,64 @@ npm run build      # vue-tsc 类型检查 + vite build，产物在 frontend/dist
 
 ## 真实发送接入（USE_REAL_SEND）
 
-代码已完整实现，**默认关闭**：
+**默认关闭**，开箱即跑模拟发送。开关由环境变量控制：
+
+\`\`\`powershell
+$env:USE_REAL_SEND="true"        # 只认 true（大小写不敏感），其它值一律当作关闭
+python -m uvicorn main:app --reload
+\`\`\`
 
 \`\`\`python
 # main.py
-USE_REAL_SEND = False     # False -> simulate_mass_send（模拟发送）
-                          # True  -> real_mass_send（wasock 真实发送）
+USE_REAL_SEND = os.environ.get("USE_REAL_SEND", "false").strip().lower() == "true"
 \`\`\`
 
 \`dispatch_mass_send()\` 是唯一分流入口，创建群发任务时挂到 FastAPI 的 BackgroundTasks 上。
 
+### 分工：谁负责登录，谁负责发送
+
+\`\`\`text
+connect_whatsapp.py ──启动──> wasock Node 服务 (127.0.0.1:5000) <──发指令── 后端 main.py
+      负责扫码、保持在线            换行分隔 JSON 协议               只发 sendMessage
+\`\`\`
+
+后端**不 import wasock**，而是直接向 5000 端口发 JSON 行指令：
+
+\`\`\`python
+{"action": "sendMessage", "chat": "8613800138000@s.whatsapp.net", "msg": "文本"}
+# 响应 {"type": "response", "success": true, "message": ""}
+\`\`\`
+
+好处：后端不会去拉起第二个 Node 进程抢 5000 端口，也不依赖 wasock 这个 Python 包。
+
 ### 打开真实发送的步骤
 
-1. 安装 wasock 与 Node.js，取消 \`requirements.txt\` 里 \`wasock==0.5.2\` 的注释并安装
-2. 扫码登录：\`python connect_whatsapp.py\`（终端会直接打印二维码，同时写入 \`qr.png\`）
-3. 确认登录态：\`whatsapp_auth/creds.json\` 中 \`me.id\` 有值
-4. 把系统设置里的 **新设备冷却** 调整为 0（否则账号在冷却期内会被拒发）
-5. 把 \`USE_REAL_SEND\` 改成 \`True\`，重启后端
+1. 安装 Node.js 与 wasock（**只有 \`connect_whatsapp.py\` 需要它**）：\`pip install wasock==0.5.2\`
+2. 扫码登录并**保持它一直运行**：\`python connect_whatsapp.py\`
+3. 确认登录态：\`whatsapp_auth/creds.json\` 里 \`me.id\` 有值
+4. 把系统设置里的 **新设备冷却（小时）** 调整为 0，否则账号在冷却期内会被拒发
+5. 另开一个终端，带环境变量启动后端：
+   \`\`\`powershell
+   $env:USE_REAL_SEND="true"; python -m uvicorn main:app --reload
+   \`\`\`
+
+> 环境变量在**进程启动时**读取，改完必须重启后端；\`--reload\` 只监听文件变化，不会重新读环境变量。
 
 ### 发送前会做三道前置校验
 
 任一不通过都会把任务置为 \`failed\` 并把原因打到服务端日志，不会静默空跑：
 
-1. wasock 是否可导入
+1. wasock Node 服务是否在监听（\`127.0.0.1:5000\`）
 2. \`whatsapp_auth\` 登录态是否有效（判定逻辑对齐 wasock 自带 \`isauthvalid.js\`）
 3. 账号是否满足 \`can_send()\` 发送策略（冷却 / 健康度 / 每日上限）
 
 ### 已知限制
 
-- wasock 的 Node 服务**固定占用 127.0.0.1:5000，一个进程只能有一个会话**，因此暂不支持多账号并发发送，\`account_ids\` 只取首个账号做策略校验与日志归属
-- 同一时间只能跑一个 \`WhatsAppSocket\`：后端在真实发送时与手动运行的 \`connect_whatsapp.py\` 会抢端口，二者不要同时开
+- **\`connect_whatsapp.py\` 必须一直开着**：它退出时 Node 服务也随之退出，后端就发不出消息
+  （任务会明确失败并提示 \`wasock Node 服务未运行\`）
+- Node 服务**固定占用 127.0.0.1:5000，全局只有一个会话**，因此暂不支持多账号并发发送，
+  \`account_ids\` 只取首个账号做策略校验与日志归属
+- 地址与端口可用环境变量覆盖：\`WASOCK_HOST\`、\`WASOCK_PORT\`
 
 ---
 

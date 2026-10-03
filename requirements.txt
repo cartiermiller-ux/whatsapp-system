@@ -7,8 +7,10 @@ sqlalchemy>=2.0
 pydantic>=2.5
 
 # ------------------------------------------------------------
-# 可选：真实发送（wasock 封装了 Baileys，需要本机有 Node.js）
-# 不安装也能跑，群发任务会走 simulate_mass_send 模拟发送。
-# 注意：wasock 自带一份 node_modules，下载体积较大。
+# 可选：只有 connect_whatsapp.py（扫码登录脚本）需要 wasock。
+# 后端 main.py 不 import wasock —— 它直接向 wasock 的 Node 服务
+# (127.0.0.1:5000) 发 JSON 指令，因此后端不装 wasock 也能跑
+# 模拟发送，装上也只是为了让登录脚本能启动那个 Node 服务。
+# 需要本机有 Node.js；wasock 自带一份 node_modules，体积较大。
 # ------------------------------------------------------------
 # wasock==0.5.2
