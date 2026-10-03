@@ -5,7 +5,7 @@
         <h2>余额与计费</h2>
         <div class="sub">余额 · 消费流水 · 充值 · 计费规则</div>
       </div>
-      <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
+      <div class="page-actions"><el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button><el-button type="primary" @click="rechargeVisible = true">账户充值</el-button></div>
     </div>
 
     <!-- 余额概览 -->
@@ -40,106 +40,8 @@
       </div>
     </div>
 
-    <!-- 充值 -->
-    <el-card shadow="never" class="section-gap">
-      <template #header>
-        <div class="card-header">
-          <span>{{ currency }} 充值</span>
-          <span class="muted">单笔最低 {{ minAmount }} {{ currency }}</span>
-        </div>
-      </template>
-
-      <el-alert
-        v-if="!address"
-        class="block-gap"
-        type="warning"
-        show-icon
-        :closable="false"
-        title="尚未配置收款地址，无法创建充值订单"
-        description="请前往「系统设置 -> 计费与充值」配置收款地址（recharge_address）与收款链（recharge_chain），保存后返回本页刷新。"
-      />
-
-      <el-form label-width="100px" @submit.prevent>
-        <el-form-item label="充值金额">
-          <el-input-number v-model="amount" :min="minAmount" :step="10" />
-          <span class="muted unit">{{ currency }}</span>
-        </el-form-item>
-        <el-form-item label="收款地址">
-          <div class="address-field">
-            <el-input :model-value="address" readonly placeholder="未配置，请先在系统设置中填写" />
-            <el-button :icon="CopyDocument" :disabled="!address" @click="copyAddress">复制</el-button>
-          </div>
-        </el-form-item>
-        <el-form-item label="链">
-          <el-input :model-value="chain" readonly placeholder="未配置" />
-        </el-form-item>
-        <el-form-item>
-          <el-button
-            type="primary"
-            :loading="recharging"
-            :disabled="!canRecharge"
-            @click="createRecharge"
-          >
-            创建充值订单
-          </el-button>
-          <span class="muted unit">
-            充值到账需人工确认（模拟到账接口，链上回调接入前使用）
-          </span>
-        </el-form-item>
-      </el-form>
-
-      <el-divider content-position="left">充值订单</el-divider>
-
-      <el-table v-loading="ordersLoading" :data="orders" stripe>
-        <el-table-column prop="order_no" label="订单号" min-width="200" show-overflow-tooltip />
-        <el-table-column label="金额" width="140">
-          <template #default="{ row }">{{ row.amount }} {{ row.currency }}</template>
-        </el-table-column>
-        <el-table-column prop="chain" label="链" width="100" />
-        <el-table-column prop="address" label="收款地址" min-width="200" show-overflow-tooltip />
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="statusTagType(row.status)" size="small">
-              {{ ORDER_STATUS_LABEL[row.status] || row.status }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="创建时间" width="170">
-          <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
-        </el-table-column>
-        <el-table-column label="到期时间" width="170">
-          <template #default="{ row }">{{ formatDateTime(row.expire_at) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
-          <template #default="{ row }">
-            <template v-if="row.status === 'pending'">
-              <el-button link type="primary" :icon="CircleCheck" @click="confirmOrder(row)">
-                确认到账
-              </el-button>
-              <el-button link type="danger" @click="cancelOrder(row)">取消</el-button>
-            </template>
-            <span v-else class="muted">-</span>
-          </template>
-        </el-table-column>
-        <template #empty>
-          <el-empty description="暂无充值订单，点上方「创建充值订单」发起" />
-        </template>
-      </el-table>
-
-      <div class="pager">
-        <el-pagination
-          v-model:current-page="ordersPage"
-          v-model:page-size="ordersSize"
-          :page-sizes="[10, 20, 50]"
-          :total="ordersTotal"
-          layout="total, sizes, prev, pager, next"
-          background
-          @current-change="loadOrders"
-          @size-change="onOrdersSizeChange"
-        />
-      </div>
-    </el-card>
-
+    <el-tabs v-model="activeTab" class="section-gap">
+      <el-tab-pane label="资金流水" name="transactions">
     <!-- 余额消费流水 -->
     <el-card shadow="never" class="section-gap">
       <template #header>
@@ -166,7 +68,7 @@
           clearable
           @keyup.enter="reloadTransactions"
         />
-        <el-button type="primary" :icon="Search" @click="reloadTransactions">查询</el-button>
+        <el-button :icon="Search" @click="reloadTransactions">查询</el-button>
         <el-button @click="resetTxFilters">重置</el-button>
       </div>
 
@@ -219,6 +121,60 @@
       </div>
     </el-card>
 
+      </el-tab-pane>
+      <el-tab-pane label="充值订单" name="orders">
+        <el-card shadow="never">
+      <el-table v-loading="ordersLoading" :data="orders" stripe>
+        <el-table-column prop="order_no" label="订单号" min-width="200" show-overflow-tooltip />
+        <el-table-column label="金额" width="140">
+          <template #default="{ row }">{{ row.amount }} {{ row.currency }}</template>
+        </el-table-column>
+        <el-table-column prop="chain" label="链" width="100" />
+        <el-table-column prop="address" label="收款地址" min-width="200" show-overflow-tooltip />
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="statusTagType(row.status)" size="small">
+              {{ ORDER_STATUS_LABEL[row.status] || row.status }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="创建时间" width="170">
+          <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+        </el-table-column>
+        <el-table-column label="到期时间" width="170">
+          <template #default="{ row }">{{ formatDateTime(row.expire_at) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="180" fixed="right">
+          <template #default="{ row }">
+            <template v-if="row.status === 'pending'">
+              <el-button link type="primary" :icon="CircleCheck" @click="confirmOrder(row)">
+                确认到账
+              </el-button>
+              <el-button link type="danger" @click="cancelOrder(row)">取消</el-button>
+            </template>
+            <span v-else class="muted">-</span>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <el-empty description="暂无充值订单，点击页面右上方「账户充值」发起" />
+        </template>
+      </el-table>
+
+      <div class="pager">
+        <el-pagination
+          v-model:current-page="ordersPage"
+          v-model:page-size="ordersSize"
+          :page-sizes="[10, 20, 50]"
+          :total="ordersTotal"
+          layout="total, sizes, prev, pager, next"
+          background
+          @current-change="loadOrders"
+          @size-change="onOrdersSizeChange"
+        />
+      </div>
+        </el-card>
+      </el-tab-pane>
+      <el-tab-pane label="计费规则" name="rules">
     <!-- 国家收费规则 -->
     <el-card shadow="never" class="section-gap">
       <template #header>
@@ -238,7 +194,50 @@
           <el-empty description="暂无计费规则" />
         </template>
       </el-table>
-    </el-card>
+    </el-card>      </el-tab-pane>
+    </el-tabs>
+    <el-drawer v-model="rechargeVisible" title="账户充值" size="560px">
+      <p class="muted">单笔最低 {{ minAmount }} {{ currency }}</p>
+      <el-alert
+        v-if="!address"
+        class="block-gap"
+        type="warning"
+        show-icon
+        :closable="false"
+        title="尚未配置收款地址，无法创建充值订单"
+        description="请前往「系统设置 -> 计费与充值」配置收款地址（recharge_address）与收款链（recharge_chain），保存后返回本页刷新。"
+      />
+
+      <el-form label-width="100px" @submit.prevent>
+        <el-form-item label="充值金额">
+          <el-input-number v-model="amount" :min="minAmount" :step="10" />
+          <span class="muted unit">{{ currency }}</span>
+        </el-form-item>
+        <el-form-item label="收款地址">
+          <div class="address-field">
+            <el-input :model-value="address" readonly placeholder="未配置，请先在系统设置中填写" />
+            <el-button :icon="CopyDocument" :disabled="!address" @click="copyAddress">复制</el-button>
+          </div>
+        </el-form-item>
+        <el-form-item label="链">
+          <el-tag effect="plain">{{ chain || '未配置' }}</el-tag>
+        </el-form-item>
+        <el-form-item>
+          <el-button
+            type="primary"
+            :loading="recharging"
+            :disabled="!canRecharge"
+            @click="createRecharge"
+          >
+            创建充值订单
+          </el-button>
+          <span class="muted unit">
+            充值到账需人工确认（模拟到账接口，链上回调接入前使用）
+          </span>
+        </el-form-item>
+      </el-form>
+
+    </el-drawer>
   </div>
 </template>
 
@@ -255,6 +254,8 @@ import {
   statusTagType,
 } from '@/utils/format'
 
+const activeTab = ref('transactions')
+const rechargeVisible = ref(false)
 const loading = ref(false)
 
 // ---------- 余额概览 ----------
@@ -329,6 +330,8 @@ async function createRecharge() {
   try {
     const order = await billingApi.recharge(amount.value)
     ElMessage.success(`充值订单已创建：${order.order_no}`)
+    rechargeVisible.value = false
+    activeTab.value = 'orders'
     await refreshAccountData()
   } catch {
     /* 拦截器已提示 */

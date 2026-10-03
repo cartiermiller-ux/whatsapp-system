@@ -8,15 +8,7 @@
       <div class="actions">
         <el-button type="primary" :icon="Upload" @click="importVisible = true">批量导入号码</el-button>
         <el-button :icon="Download" :loading="exporting" @click="exportNumbers">导出号码</el-button>
-        <el-button
-          type="danger"
-          plain
-          :icon="Delete"
-          :disabled="selectedIds.length === 0"
-          @click="batchDelete"
-        >
-          批量删除{{ selectedIds.length ? `(${selectedIds.length})` : '' }}
-        </el-button>
+
       </div>
     </div>
 
@@ -44,8 +36,20 @@
           <el-option label="虚拟号" value="virtual" />
           <el-option label="接码平台" value="sms_platform" />
         </el-select>
-        <el-button type="primary" :icon="Search" @click="reload">查询</el-button>
+        <el-button :icon="Search" @click="reload">查询</el-button>
         <el-button @click="resetFilters">重置</el-button>
+      </div>
+      <div v-if="selectedIds.length" class="batch-toolbar">
+        <span>已选择 {{ selectedIds.length }} 个号码</span>
+        <el-button
+          type="danger"
+          plain
+          :icon="Delete"
+          :disabled="selectedIds.length === 0"
+          @click="batchDelete"
+        >
+          批量删除{{ selectedIds.length ? `(${selectedIds.length})` : '' }}
+        </el-button>
       </div>
       <el-table v-loading="loading" :data="rows" stripe @selection-change="onSelectionChange">
         <el-table-column type="selection" width="46" />

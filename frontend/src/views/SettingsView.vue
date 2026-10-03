@@ -29,8 +29,8 @@
           />
 
           <el-form label-width="200px" class="param-form" @submit.prevent>
-            <template v-for="group in groups" :key="group.category">
-              <div class="group-title">{{ group.label }}</div>
+            <el-collapse v-model="expandedGroups">
+            <el-collapse-item v-for="group in groups" :key="group.category" :title="group.label" :name="group.category">
               <el-form-item v-for="field in group.items" :key="field.key" :label="field.label">
                 <el-input-number
                   v-if="field.type === 'int' || field.type === 'float'"
@@ -54,7 +54,8 @@
                   <span class="muted"> · 默认值 {{ field.default === '' ? '（空）' : field.default }}</span>
                 </div>
               </el-form-item>
-            </template>
+            </el-collapse-item>
+            </el-collapse>
           </el-form>
 
           <div class="form-actions is-indented">
@@ -80,7 +81,7 @@
             type="warning"
             :closable="false"
             show-icon
-            title="用户管理仅管理员可见（GET/POST/PUT/DELETE /api/v1/admin/users）。"
+            title="用户管理仅管理员可见。"
           />
           <template v-else>
             <div class="filter-bar">
@@ -108,7 +109,7 @@
                   :value="key"
                 />
               </el-select>
-              <el-button type="primary" :icon="Search" @click="reloadUsers">查询</el-button>
+              <el-button :icon="Search" @click="reloadUsers">查询</el-button>
               <el-button @click="resetUserFilters">重置</el-button>
               <el-button type="primary" :icon="Plus" @click="openUserDialog()">新建用户</el-button>
             </div>
@@ -276,6 +277,7 @@ const original = ref<Record<string, any>>({})
 
 const isAdmin = computed(() => ['super_admin', 'agent_admin'].includes(auth.user?.role || ''))
 
+const expandedGroups = ref<string[]>([])
 const groups = computed(() => {
   const map = new Map<string, SettingField[]>()
   for (const field of fields.value) {
@@ -303,6 +305,7 @@ async function loadSettings() {
   try {
     const schema = await settingsApi.schema()
     fields.value = schema
+    if (!expandedGroups.value.length && schema.length) expandedGroups.value = [schema[0].category]
     const next: Record<string, any> = {}
     for (const field of schema) {
       next[field.key] =

@@ -89,7 +89,7 @@
               clearable
               @keyup.enter="reloadProxies"
             />
-            <el-button type="primary" :icon="Search" @click="reloadProxies">查询</el-button>
+            <el-button :icon="Search" @click="reloadProxies">查询</el-button>
             <el-button @click="resetProxyFilters">重置</el-button>
             <el-button :loading="syncing" @click="syncProxies">同步代理</el-button>
             <el-button :icon="Upload" @click="importVisible = true">导入代理</el-button>
@@ -170,7 +170,7 @@
               :value="key"
             />
           </el-select>
-          <el-button type="primary" :icon="Search" @click="reloadSms">查询</el-button>
+          <el-button :icon="Search" @click="reloadSms">查询</el-button>
           <el-button @click="smsFilters.status = ''; reloadSms()">重置</el-button>
           <el-button type="primary" :icon="Plus" @click="smsDialogVisible = true">取号</el-button>
         </div>
@@ -290,7 +290,7 @@
                 clearable
                 @keyup.enter="reloadPurchase"
               />
-              <el-button type="primary" :icon="Search" @click="reloadPurchase">查询</el-button>
+              <el-button :icon="Search" @click="reloadPurchase">查询</el-button>
               <el-button @click="resetPurchaseFilters">重置</el-button>
           </div>
 

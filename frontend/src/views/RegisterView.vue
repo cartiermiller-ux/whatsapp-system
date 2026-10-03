@@ -5,52 +5,16 @@
         <h2>注册管理</h2>
         <div class="sub">批量注册 · 实时进度 · 成功率统计</div>
       </div>
-      <el-button :icon="Refresh" :loading="loading" @click="loadStatus">刷新状态</el-button>
+      <div class="actions">
+        <el-button :icon="Refresh" :loading="loading" @click="loadStatus">刷新状态</el-button>
+        <el-button type="primary" :icon="Plus" @click="createVisible = true">批量注册</el-button>
+      </div>
     </div>
 
-    <el-row :gutter="16" class="card-row">
-      <!-- 批量注册 -->
-      <el-col :xs="24" :md="9">
         <el-card shadow="never">
-          <template #header>批量注册</template>
-          <el-form label-position="top">
-            <el-form-item label="号码 ID 列表">
-              <el-input
-                v-model="registerText"
-                type="textarea"
-                :rows="5"
-                placeholder="输入号码池中的号码 ID，逗号或换行分隔，例如：1,2,3"
-              />
-            </el-form-item>
-            <el-form-item>
-              <el-button size="small" @click="pickPending">选择全部待注册号码</el-button>
-              <span class="muted"> 已选 {{ registerIds.length }} 个</span>
-            </el-form-item>
-            <el-button
-              type="primary"
-              :loading="submitting"
-              :disabled="registerIds.length === 0"
-              @click="submitRegister"
-            >
-              提交注册任务
-            </el-button>
-          </el-form>
-          <el-alert
-            class="section-gap"
-            type="info"
-            :closable="false"
-            show-icon
-            title="对接 POST /api/v1/register/batch，后端为后台异步任务（模拟约 2 秒/个）。"
-          />
-        </el-card>
-      </el-col>
-
-      <!-- 注册状态 -->
-      <el-col :xs="24" :md="15">
-        <el-card shadow="never" class="register-status-card">
           <template #header>
             <div class="card-header">
-              <span>注册状态（GET /api/v1/register/status）</span>
+              <span>注册进度</span>
               <div class="auto-refresh">
                 <span class="muted">实时刷新</span>
                 <el-switch v-model="autoRefresh" @change="onAutoRefreshChange" />
@@ -81,6 +45,7 @@
             <span>注册成功率</span>
             <el-progress
               :percentage="successRate"
+              :show-text="false"
               :stroke-width="14"
               :color="successRate >= 70 ? '#303030' : '#a16207'"
               style="flex: 1"
@@ -106,13 +71,37 @@
             </el-table-column>
           </el-table>
         </el-card>
-      </el-col>
-    </el-row>
+
+    <el-drawer v-model="createVisible" title="批量注册" size="480px">
+          <el-form label-position="top">
+            <el-form-item label="号码 ID 列表">
+              <el-input
+                v-model="registerText"
+                type="textarea"
+                :rows="5"
+                placeholder="输入号码池中的号码 ID，逗号或换行分隔，例如：1,2,3"
+              />
+            </el-form-item>
+            <el-form-item>
+              <el-button size="small" @click="pickPending">选择全部待注册号码</el-button>
+              <span class="muted"> 已选 {{ registerIds.length }} 个</span>
+            </el-form-item>
+            <el-button
+              type="primary"
+              :loading="submitting"
+              :disabled="registerIds.length === 0"
+              @click="submitRegister"
+            >
+              提交注册任务
+            </el-button>
+          </el-form>
+      <p class="field-hint">任务提交后在后台执行，可在注册进度中查看结果。</p>
+    </el-drawer>
 
     <el-card shadow="never" class="section-gap">
       <template #header>
         <div class="card-header">
-          <span>失败归因（GET /api/v1/register/analysis）</span>
+          <span>注册失败记录</span>
           <span class="muted">共 {{ analysis.total }} 个失败号码</span>
         </div>
       </template>
@@ -134,7 +123,7 @@
         type="info"
         :closable="false"
         show-icon
-        title="后端目前只返回失败号码清单，尚未返回具体失败原因（number / environment / sms）。"
+        title="当前显示失败号码清单，详细失败原因暂不可用。"
       />
     </el-card>
   </div>
@@ -143,7 +132,7 @@
 <script setup lang="ts">
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { Plus, Refresh } from '@element-plus/icons-vue'
 import { registerApi } from '@/api'
 import type { RegisterAnalysis, RegisterStatusResult } from '@/types/api'
 import {
@@ -153,6 +142,7 @@ import {
   statusTagType,
 } from '@/utils/format'
 
+const createVisible = ref(false)
 const loading = ref(false)
 const submitting = ref(false)
 const autoRefresh = ref(false)
@@ -200,6 +190,7 @@ async function submitRegister() {
   submitting.value = true
   try {
     const res = await registerApi.batch(registerIds.value)
+    createVisible.value = false
     ElMessage.success(res.message || `已提交 ${res.count} 个注册任务`)
     registerText.value = ''
     // 稍等后刷新，让「注册中」状态可见

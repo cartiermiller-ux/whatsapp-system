@@ -118,3 +118,11 @@ body { font-family:var(--wa-font-family); background:var(--wa-bg); color:var(--w
  .el-dialog__footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
  .el-dialog__footer .el-button + .el-button { margin-left: 0; }
 }
+
+/* Selection operations belong to the table they act on. */
+.batch-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; margin-bottom: 12px; border: 1px solid var(--wa-border); border-radius: 6px; background: var(--wa-sidebar-bg); }
+.batch-toolbar > span { margin-right: auto; color: var(--wa-text-secondary); }
+
+/* Keep account forms readable inside full-width panels. */
+.focused-form { max-width: 640px; }
+.el-button, .el-link, .el-input__inner, .el-textarea__inner, .el-select__placeholder { font-family: var(--wa-font-family); }

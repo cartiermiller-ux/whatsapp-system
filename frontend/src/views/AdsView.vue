@@ -5,7 +5,10 @@
         <h2>广告消息管理</h2>
         <div class="sub">多语言文案 · 超链管理 · 效果统计</div>
       </div>
-      <el-button type="primary" :icon="MagicStick" @click="aiNotReady">AI 生成文案</el-button>
+      <div class="actions">
+        <el-button v-if="activeTab === 'copy'" type="primary" :icon="Plus" @click="openCopyDialog()">新建文案</el-button>
+        <el-button v-else-if="activeTab === 'link'" type="primary" :icon="Plus" @click="openLinkDialog()">新建超链</el-button>
+      </div>
     </div>
 
     <el-tabs v-model="activeTab">
@@ -34,9 +37,8 @@
               clearable
               @keyup.enter="reloadCopies"
             />
-            <el-button type="primary" :icon="Search" @click="reloadCopies">查询</el-button>
+            <el-button :icon="Search" @click="reloadCopies">查询</el-button>
             <el-button @click="resetCopyFilters">重置</el-button>
-            <el-button type="primary" :icon="Plus" @click="openCopyDialog()">新建文案</el-button>
           </div>
           <el-table v-loading="copyLoading" :data="copies" stripe>
             <el-table-column prop="id" label="ID" width="70" />
@@ -123,9 +125,8 @@
           <el-select v-model="linkFilters.status" placeholder="状态" style="width: 140px" clearable>
             <el-option v-for="(label, key) in AD_STATUS_LABEL" :key="key" :label="label" :value="key" />
           </el-select>
-          <el-button type="primary" :icon="Search" @click="reloadLinks">查询</el-button>
+          <el-button :icon="Search" @click="reloadLinks">查询</el-button>
           <el-button @click="resetLinkFilters">重置</el-button>
-          <el-button type="primary" :icon="Plus" @click="openLinkDialog()">新建超链</el-button>
         </div>
           <el-table v-loading="linkLoading" :data="links" stripe>
             <el-table-column prop="id" label="ID" width="70" />

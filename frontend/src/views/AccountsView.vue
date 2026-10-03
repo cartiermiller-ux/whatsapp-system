@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2>账号管理</h2>
-        <div class="sub">账号列表 · 详情 · 健康度看板</div>
+        <div class="sub">账号列表 · 状态筛选 · 账号详情</div>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="loadAccounts">刷新</el-button>
     </div>
@@ -13,7 +13,7 @@
       type="warning"
       show-icon
       :closable="false"
-      title="未能连接 GET /api/v1/accounts，请确认后端已启动。"
+      title="账号数据加载失败，请检查连接后重试。"
     />
 
     <div class="filter-bar section-gap">
@@ -41,8 +41,7 @@
       <el-button @click="resetFilters">重置</el-button>
     </div>
 
-    <el-row :gutter="16" class="card-row section-gap">
-      <el-col :xs="24" :md="16">
+    <div class="section-gap">
         <el-card shadow="never">
           <el-table v-loading="loading" :data="pagedAccounts" stripe>
             <el-table-column prop="id" label="账号 ID" width="90" />
@@ -108,15 +107,12 @@
             />
           </div>
         </el-card>
-      </el-col>
-
-      <el-col :xs="24" :md="8">
-        <el-card shadow="never">
-          <template #header>健康度看板</template>
-          <EChart :option="statusChartOption" :height="240" />
-        </el-card>
-      </el-col>
-    </el-row>
+    </div>
+    <el-collapse class="section-gap">
+      <el-collapse-item title="账号状态分布" name="status">
+        <EChart :option="statusChartOption" :height="240" />
+      </el-collapse-item>
+    </el-collapse>
 
     <el-drawer v-model="detailVisible" title="账号详情" size="440px">
       <div v-loading="detailLoading">

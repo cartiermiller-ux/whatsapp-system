@@ -6,9 +6,7 @@
       </template>
       <div class="ph-body">
         <el-tag type="info" effect="plain">待接入后端接口</el-tag>
-        <p v-if="api" class="ph-api">
-          期望接口：<code class="mono">{{ api }}</code>
-        </p>
+
         <p v-if="tip" class="ph-tip">{{ tip }}</p>
       </div>
     </el-empty>

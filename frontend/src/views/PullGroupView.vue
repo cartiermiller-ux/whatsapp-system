@@ -5,13 +5,57 @@
         <h2>拉群任务</h2>
         <div class="sub">拉人来源 · 执行账号 · 任务列表</div>
       </div>
-      <el-button :icon="Refresh" :loading="loading" @click="loadTasks">刷新</el-button>
+      <div class="actions">
+        <el-button :icon="Refresh" :loading="loading" @click="loadTasks">刷新</el-button>
+        <el-button type="primary" :icon="Plus" @click="createVisible = true">新建拉群任务</el-button>
+      </div>
     </div>
 
-    <el-row :gutter="16" class="card-row">
-      <el-col :xs="24" :md="10">
         <el-card shadow="never">
-          <template #header>创建拉群任务</template>
+          <template #header>
+            <div class="card-header">
+              <span>拉群任务列表</span>
+              <span class="muted">{{ total }} 条</span>
+            </div>
+          </template>
+          <el-table v-loading="loading" :data="tasks" stripe>
+            <el-table-column prop="id" label="ID" width="70" />
+            <el-table-column prop="task_name" label="任务名称" min-width="150" show-overflow-tooltip />
+            <el-table-column prop="target_group_id" label="目标群 ID" width="110" />
+            <el-table-column label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag :type="statusTagType(row.status)" size="small">
+                  {{ TASK_STATUS_LABEL[row.status] || row.status }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="创建时间" width="170">
+              <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="90" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openDetail(row)">详情</el-button>
+              </template>
+            </el-table-column>
+            <template #empty>
+              <el-empty description="暂无任务，点击页面右上角「新建拉群任务」" />
+            </template>
+          </el-table>
+          <div class="pager">
+            <el-pagination
+              v-model:current-page="page"
+              v-model:page-size="size"
+              :page-sizes="[10, 20, 50]"
+              :total="total"
+              layout="total, sizes, prev, pager, next"
+              background
+              @current-change="loadTasks"
+              @size-change="onSizeChange"
+            />
+          </div>
+        </el-card>
+
+    <el-drawer v-model="createVisible" title="创建拉群任务" size="560px">
           <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
             <el-form-item label="任务名称" prop="task_name">
               <el-input v-model="form.task_name" placeholder="如 10月拉群第一批" />
@@ -76,55 +120,7 @@
               提交拉群任务
             </el-button>
           </el-form>
-        </el-card>
-      </el-col>
-
-      <el-col :xs="24" :md="14">
-        <el-card shadow="never">
-          <template #header>
-            <div class="card-header">
-              <span>任务列表（GET /api/v1/invite/tasks）</span>
-              <span class="muted">{{ total }} 条</span>
-            </div>
-          </template>
-          <el-table v-loading="loading" :data="tasks" stripe>
-            <el-table-column prop="id" label="ID" width="70" />
-            <el-table-column prop="task_name" label="任务名称" min-width="150" show-overflow-tooltip />
-            <el-table-column prop="target_group_id" label="目标群 ID" width="110" />
-            <el-table-column label="状态" width="100">
-              <template #default="{ row }">
-                <el-tag :type="statusTagType(row.status)" size="small">
-                  {{ TASK_STATUS_LABEL[row.status] || row.status }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="创建时间" width="170">
-              <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="90" fixed="right">
-              <template #default="{ row }">
-                <el-button link type="primary" @click="openDetail(row)">详情</el-button>
-              </template>
-            </el-table-column>
-            <template #empty>
-              <el-empty description="暂无拉群任务，点上方「创建拉群任务」发起" />
-            </template>
-          </el-table>
-          <div class="pager">
-            <el-pagination
-              v-model:current-page="page"
-              v-model:page-size="size"
-              :page-sizes="[10, 20, 50]"
-              :total="total"
-              layout="total, sizes, prev, pager, next"
-              background
-              @current-change="loadTasks"
-              @size-change="onSizeChange"
-            />
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+    </el-drawer>
 
     <el-drawer v-model="detailVisible" title="拉群任务详情" size="420px">
       <div v-loading="detailLoading">
@@ -144,7 +140,7 @@
           type="info"
           :closable="false"
           show-icon
-          title="进度、成功拉入人数、失败原因需后端补充字段。当前对接 GET /api/v1/invite/tasks/{id}，抽屉打开时每 3 秒刷新。"
+          title="详情打开时每 3 秒更新一次；成功人数及失败原因暂不可用。"
         />
       </div>
     </el-drawer>
@@ -152,15 +148,26 @@
 </template>
 
 <script setup lang="ts">
+import { useRoute, useRouter } from 'vue-router'
 import { computed, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { Plus, Refresh } from '@element-plus/icons-vue'
 import { accountApi, groupApi, inviteApi } from '@/api'
 import type { AccountItem, GroupRow, InviteTaskDetail, InviteTaskRow } from '@/types/api'
 import { TASK_STATUS_LABEL, formatDateTime, parseIdList, statusTagType } from '@/utils/format'
 
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
+const route = useRoute()
+const router = useRouter()
+const createVisible = ref(false)
+watch(() => route.query.create, (value) => {
+  if (value === '1' && route.path === '/pull-group') {
+    createVisible.value = true
+    const { create, ...query } = route.query
+    router.replace({ path: route.path, query })
+  }
+}, { immediate: true })
 const loading = ref(false)
 
 const groups = ref<GroupRow[]>([])
@@ -246,6 +253,7 @@ async function submit() {
       account_ids: form.account_ids,
       billing_country: form.billing_country,
     })
+    createVisible.value = false
     ElMessage.success(`拉群任务已创建，ID: ${res.task_id}`)
     form.task_name = ''
     form.source_text = ''

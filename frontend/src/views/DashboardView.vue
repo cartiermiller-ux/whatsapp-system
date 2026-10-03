@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2>数据看板</h2>
-        <div class="sub">WhatsApp 群发运营 · 今日概览 · 快捷操作 · 通道状态 · 任务进度</div>
+        <div class="sub">WhatsApp 群发运营 · 今日概览 · 任务进度 · 运行状态</div>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
     </div>
@@ -69,43 +69,15 @@
       </div>
     </el-card>
 
-    <!-- ② 快捷操作（主 CTA 固定在第二位，颜色唯一） -->
-    <el-card shadow="never" class="quick-card">
-      <template #header>快捷操作</template>
-      <div class="quick-actions">
-        <el-button type="primary" :icon="Promotion" @click="go('/mass-send')">新建群发</el-button>
-        <el-button :icon="Upload" @click="go('/numbers')">导入号码</el-button>
-        <el-button :icon="Document" @click="go('/ads')">广告文案</el-button>
-        <el-button :icon="Wallet" @click="go('/billing')">余额充值</el-button>
-      </div>
-    </el-card>
-
-    <!-- ③ 通道状态 -->
-    <el-card shadow="never" class="channels-card">
-      <template #header>
-        <div class="card-header">
-          <span>通道状态</span>
-          <el-button link type="primary" @click="go('/integrations')">配置</el-button>
-        </div>
-      </template>
-      <div class="channel-grid">
-        <div v-for="item in providers" :key="item.kind" class="channel">
-          <span class="dot" :class="item.configured ? 'dot-ok' : 'dot-warn'"></span>
-          <div class="channel-copy">
-            <span class="channel-name">{{ PROVIDER_KIND_LABEL[item.kind] || item.kind }}</span>
-            <span class="channel-meta muted">{{ item.mock ? '模拟' : item.name }}</span>
-          </div>
-        </div>
-        <div v-if="!providers.length" class="channel muted">未获取到通道状态</div>
-      </div>
-    </el-card>
-
     <!-- ④ 任务列表 -->
     <el-card shadow="never" class="tasks-card">
       <template #header>
         <div class="card-header">
           <span>{{ activeTasks.length ? '进行中任务' : '最近任务' }}</span>
-          <el-button link type="primary" @click="go('/mass-send')">全部任务</el-button>
+          <div class="actions">
+            <el-button link type="primary" @click="go('/mass-send')">全部任务</el-button>
+            <el-button type="primary" :icon="Promotion" @click="router.push({ path: '/mass-send', query: { create: '1' } })">新建群发</el-button>
+          </div>
         </div>
       </template>
       <el-table v-loading="loading" :data="taskRows" stripe>
@@ -140,9 +112,29 @@
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
         <template #empty>
-          <el-empty description="还没有群发任务，点上方「新建群发」发起第一波" />
+          <el-empty description="暂无群发任务，可点击本卡片右上角「新建群发」" />
         </template>
       </el-table>
+    </el-card>
+
+    <!-- ③ 通道状态 -->
+    <el-card shadow="never" class="channels-card">
+      <template #header>
+        <div class="card-header">
+          <span>通道状态</span>
+          <el-button link type="primary" @click="go('/integrations')">配置</el-button>
+        </div>
+      </template>
+      <div class="channel-grid">
+        <div v-for="item in providers" :key="item.kind" class="channel">
+          <span class="dot" :class="item.configured ? 'dot-ok' : 'dot-warn'"></span>
+          <div class="channel-copy">
+            <span class="channel-name">{{ PROVIDER_KIND_LABEL[item.kind] || item.kind }}</span>
+            <span class="channel-meta muted">{{ item.mock ? '模拟' : item.name }}</span>
+          </div>
+        </div>
+        <div v-if="!providers.length" class="channel muted">未获取到通道状态</div>
+      </div>
     </el-card>
 
     <!-- ⑤ 账号健康度：低频信息，折叠收起，不占首屏 -->
@@ -167,7 +159,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Document, Promotion, Refresh, Upload, Wallet } from '@element-plus/icons-vue'
+import { Promotion, Refresh } from '@element-plus/icons-vue'
 import type { EChartsOption } from 'echarts'
 import { dashboardApi } from '@/api'
 import type { DashboardMetrics, DashboardOverview, DashboardTaskBrief } from '@/types/api'
@@ -316,8 +308,6 @@ onMounted(load)
 .tone-success { color: var(--wa-brand); }
 .tone-warning { color: var(--wa-warning); }
 .tone-danger { color: var(--wa-danger); }
-.quick-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.quick-actions :deep(.el-button) { width: 100%; min-width: 0; margin: 0; height: 36px; padding: 8px; }
 .channel-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .channel { min-width: 0; display: flex; align-items: flex-start; gap: 8px; font-size: 13px; }
 .channel-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
@@ -337,11 +327,10 @@ onMounted(load)
 .error-body { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 @container dashboard (min-width: 640px) { .kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @container dashboard (min-width: 850px) {
-  .dashboard-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .overview-card, .tasks-card, .collapse-block { grid-column: 1 / -1; }
+  .channel-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 @container dashboard (max-width: 260px) {
-  .kpi-grid, .quick-actions { grid-template-columns: minmax(0, 1fr); }
+  .kpi-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @container dashboard (max-width: 420px) { .channel-grid { grid-template-columns: minmax(0, 1fr); } }
 </style>

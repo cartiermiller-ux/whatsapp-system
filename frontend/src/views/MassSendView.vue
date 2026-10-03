@@ -5,14 +5,78 @@
         <h2>群发任务</h2>
         <div class="sub">创建任务 · 实时进度 · 效果统计</div>
       </div>
-      <el-button :icon="Refresh" :loading="loading" @click="loadTasks">刷新</el-button>
+      <div class="actions">
+        <el-button :icon="Refresh" :loading="loading" @click="loadTasks">刷新</el-button>
+        <el-button type="primary" :icon="Plus" @click="createVisible = true">新建群发任务</el-button>
+      </div>
     </div>
 
-    <el-row :gutter="16" class="card-row">
-      <!-- 创建任务 -->
-      <el-col :xs="24" :md="10">
         <el-card shadow="never">
-          <template #header>创建群发任务</template>
+          <template #header>
+            <div class="card-header">
+              <span>群发任务列表</span>
+              <el-select
+                v-model="statusFilter"
+                size="small"
+                placeholder="全部状态"
+                clearable
+                style="width: 130px"
+                @change="reload"
+              >
+                <el-option label="排队中" value="pending" />
+                <el-option label="进行中" value="running" />
+                <el-option label="已完成" value="done" />
+              </el-select>
+            </div>
+          </template>
+
+          <el-table v-loading="loading" :data="tasks" stripe>
+            <el-table-column prop="id" label="ID" width="70" />
+            <el-table-column prop="task_name" label="任务名称" min-width="140" show-overflow-tooltip />
+            <el-table-column label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag :type="statusTagType(row.status)" size="small">
+                  {{ TASK_STATUS_LABEL[row.status] || row.status }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="进度" width="140">
+              <template #default="{ row }">
+                <el-progress
+                  :percentage="progressOf(row)"
+                  :stroke-width="12"
+                  :status="row.status === 'done' ? 'success' : undefined"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column label="已发送" width="80">
+              <template #default="{ row }">{{ row.sent }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="110" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openDetail(row.id)">详情</el-button>
+              </template>
+            </el-table-column>
+            <template #empty>
+              <el-empty description="暂无任务，点击页面右上角「新建群发任务」" />
+            </template>
+          </el-table>
+
+          <div class="pager">
+            <el-pagination
+              v-model:current-page="page"
+              v-model:page-size="size"
+              :page-sizes="[10, 20, 50]"
+              :total="total"
+              layout="total, sizes, prev, pager, next"
+              background
+              @current-change="loadTasks"
+              @size-change="onSizeChange"
+            />
+          </div>
+        </el-card>
+
+    <el-drawer v-model="createVisible" title="创建群发任务" size="560px">
           <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
             <el-form-item label="任务名称" prop="task_name">
               <el-input v-model="form.task_name" placeholder="如 10月促销第一波" />
@@ -69,6 +133,8 @@
               <el-input v-model="form.link_url" placeholder="https://example.com/xxx" />
             </el-form-item>
 
+            <el-collapse class="section-gap block-gap">
+              <el-collapse-item title="高级选项（暂未开放）" name="advanced">
             <el-form-item label="发送策略">
               <el-radio-group v-model="form.strategy" disabled>
                 <el-radio-button value="ai">AI 自动</el-radio-button>
@@ -88,6 +154,8 @@
               <el-tag type="info" size="small" effect="plain" class="inline-tag">待接入</el-tag>
             </el-form-item>
 
+              </el-collapse-item>
+            </el-collapse>
             <el-button
               type="primary"
               :loading="submitting"
@@ -97,77 +165,7 @@
               提交群发任务
             </el-button>
           </el-form>
-        </el-card>
-      </el-col>
-
-      <!-- 任务列表 -->
-      <el-col :xs="24" :md="14">
-        <el-card shadow="never">
-          <template #header>
-            <div class="card-header">
-              <span>任务列表（GET /api/v1/mass-send/tasks）</span>
-              <el-select
-                v-model="statusFilter"
-                size="small"
-                placeholder="全部状态"
-                clearable
-                style="width: 130px"
-                @change="reload"
-              >
-                <el-option label="排队中" value="pending" />
-                <el-option label="进行中" value="running" />
-                <el-option label="已完成" value="done" />
-              </el-select>
-            </div>
-          </template>
-
-          <el-table v-loading="loading" :data="tasks" stripe>
-            <el-table-column prop="id" label="ID" width="70" />
-            <el-table-column prop="task_name" label="任务名称" min-width="140" show-overflow-tooltip />
-            <el-table-column label="状态" width="100">
-              <template #default="{ row }">
-                <el-tag :type="statusTagType(row.status)" size="small">
-                  {{ TASK_STATUS_LABEL[row.status] || row.status }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="进度" width="140">
-              <template #default="{ row }">
-                <el-progress
-                  :percentage="progressOf(row)"
-                  :stroke-width="12"
-                  :status="row.status === 'done' ? 'success' : undefined"
-                />
-              </template>
-            </el-table-column>
-            <el-table-column label="已发送" width="80">
-              <template #default="{ row }">{{ row.sent }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="110" fixed="right">
-              <template #default="{ row }">
-                <el-button link type="primary" @click="openDetail(row.id)">详情</el-button>
-              </template>
-            </el-table-column>
-            <template #empty>
-              <el-empty description="暂无任务，在左侧填写表单创建第一个群发任务" />
-            </template>
-          </el-table>
-
-          <div class="pager">
-            <el-pagination
-              v-model:current-page="page"
-              v-model:page-size="size"
-              :page-sizes="[10, 20, 50]"
-              :total="total"
-              layout="total, sizes, prev, pager, next"
-              background
-              @current-change="loadTasks"
-              @size-change="onSizeChange"
-            />
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+    </el-drawer>
 
     <el-drawer v-model="detailVisible" title="任务详情" size="460px">
       <div v-loading="detailLoading">
@@ -218,7 +216,7 @@
           class="section-gap"
           :closable="false"
           show-icon
-          title="进度来自 GET /api/v1/mass-send/tasks/{id}，抽屉打开时每 3 秒实时刷新。"
+          title="详情打开时每 3 秒更新一次任务进度。"
         />
         <el-alert
           class="section-gap"
@@ -233,15 +231,26 @@
 </template>
 
 <script setup lang="ts">
+import { useRoute, useRouter } from 'vue-router'
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { Plus, Refresh } from '@element-plus/icons-vue'
 import { accountApi, massSendApi } from '@/api'
 import type { AccountItem, MassSendProgress, MassSendTaskRow } from '@/types/api'
 import { TASK_STATUS_LABEL, formatDateTime, parseIdList, statusTagType } from '@/utils/format'
 
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
+const route = useRoute()
+const router = useRouter()
+const createVisible = ref(false)
+watch(() => route.query.create, (value) => {
+  if (value === '1' && route.path === '/mass-send') {
+    createVisible.value = true
+    const { create, ...query } = route.query
+    router.replace({ path: route.path, query })
+  }
+}, { immediate: true })
 const loading = ref(false)
 const accounts = ref<AccountItem[]>([])
 
@@ -345,6 +354,7 @@ async function submit() {
       message_content: form.message_content,
       link_url: form.link_url,
     })
+    createVisible.value = false
     ElMessage.success(`任务已创建，ID: ${res.task_id}`)
     form.task_name = ''
     form.target_text = ''

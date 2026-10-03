@@ -9,7 +9,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 4
+      "cardCount": 3
     },
     {
       "id": "numbers",
@@ -31,7 +31,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 7
+      "cardCount": 6
     },
     {
       "id": "accounts",
@@ -42,7 +42,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "groups",
@@ -64,7 +64,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "pull-group",
@@ -75,7 +75,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "integrations",
@@ -163,7 +163,29 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 7
+      "cardCount": 5
+    },
+    {
+      "id": "billing-tab1",
+      "width": 1440,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 5
+    },
+    {
+      "id": "billing-tab2",
+      "width": 1440,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 5
     },
     {
       "id": "profile",
@@ -174,10 +196,54 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 3
+      "cardCount": 1
+    },
+    {
+      "id": "profile-tab1",
+      "width": 1440,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "profile-tab2",
+      "width": 1440,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
     },
     {
       "id": "settings",
+      "width": 1440,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "settings-group0",
+      "width": 1440,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "settings-group1",
       "width": 1440,
       "mode": "populated",
       "bodyOverflow": false,
@@ -229,7 +295,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 4
+      "cardCount": 3
     },
     {
       "id": "numbers",
@@ -251,7 +317,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 7
+      "cardCount": 6
     },
     {
       "id": "accounts",
@@ -262,7 +328,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "groups",
@@ -284,7 +350,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "pull-group",
@@ -295,7 +361,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "integrations",
@@ -383,7 +449,29 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 7
+      "cardCount": 5
+    },
+    {
+      "id": "billing-tab1",
+      "width": 1024,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 5
+    },
+    {
+      "id": "billing-tab2",
+      "width": 1024,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 5
     },
     {
       "id": "profile",
@@ -394,10 +482,54 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 3
+      "cardCount": 1
+    },
+    {
+      "id": "profile-tab1",
+      "width": 1024,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "profile-tab2",
+      "width": 1024,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
     },
     {
       "id": "settings",
+      "width": 1024,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "settings-group0",
+      "width": 1024,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "settings-group1",
       "width": 1024,
       "mode": "populated",
       "bodyOverflow": false,
@@ -449,7 +581,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 4
+      "cardCount": 3
     },
     {
       "id": "numbers",
@@ -471,7 +603,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 7
+      "cardCount": 6
     },
     {
       "id": "accounts",
@@ -482,7 +614,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "groups",
@@ -504,7 +636,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "pull-group",
@@ -515,7 +647,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "integrations",
@@ -603,7 +735,29 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 7
+      "cardCount": 5
+    },
+    {
+      "id": "billing-tab1",
+      "width": 768,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 5
+    },
+    {
+      "id": "billing-tab2",
+      "width": 768,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 5
     },
     {
       "id": "profile",
@@ -614,10 +768,54 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 3
+      "cardCount": 1
+    },
+    {
+      "id": "profile-tab1",
+      "width": 768,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "profile-tab2",
+      "width": 768,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
     },
     {
       "id": "settings",
+      "width": 768,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "settings-group0",
+      "width": 768,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "settings-group1",
       "width": 768,
       "mode": "populated",
       "bodyOverflow": false,
@@ -669,7 +867,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 4
+      "cardCount": 3
     },
     {
       "id": "numbers",
@@ -691,7 +889,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 7
+      "cardCount": 6
     },
     {
       "id": "accounts",
@@ -702,7 +900,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "groups",
@@ -724,7 +922,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "pull-group",
@@ -735,7 +933,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "integrations",
@@ -823,7 +1021,29 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 7
+      "cardCount": 5
+    },
+    {
+      "id": "billing-tab1",
+      "width": 390,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 5
+    },
+    {
+      "id": "billing-tab2",
+      "width": 390,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 5
     },
     {
       "id": "profile",
@@ -834,10 +1054,54 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 3
+      "cardCount": 1
+    },
+    {
+      "id": "profile-tab1",
+      "width": 390,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "profile-tab2",
+      "width": 390,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
     },
     {
       "id": "settings",
+      "width": 390,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "settings-group0",
+      "width": 390,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "settings-group1",
       "width": 390,
       "mode": "populated",
       "bodyOverflow": false,
@@ -889,7 +1153,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 4
+      "cardCount": 3
     },
     {
       "id": "numbers",
@@ -911,7 +1175,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 7
+      "cardCount": 6
     },
     {
       "id": "accounts",
@@ -922,7 +1186,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "groups",
@@ -944,7 +1208,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "pull-group",
@@ -955,7 +1219,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "integrations",
@@ -966,7 +1230,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 1
+      "cardCount": 0
     },
     {
       "id": "integrations-tab1",
@@ -1043,7 +1307,29 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 7
+      "cardCount": 5
+    },
+    {
+      "id": "billing-tab1",
+      "width": 1440,
+      "mode": "empty",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 5
+    },
+    {
+      "id": "billing-tab2",
+      "width": 1440,
+      "mode": "empty",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 5
     },
     {
       "id": "profile",
@@ -1054,10 +1340,54 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 3
+      "cardCount": 1
+    },
+    {
+      "id": "profile-tab1",
+      "width": 1440,
+      "mode": "empty",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "profile-tab2",
+      "width": 1440,
+      "mode": "empty",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
     },
     {
       "id": "settings",
+      "width": 1440,
+      "mode": "empty",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "settings-group0",
+      "width": 1440,
+      "mode": "empty",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "settings-group1",
       "width": 1440,
       "mode": "empty",
       "bodyOverflow": false,
@@ -1109,7 +1439,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 4
+      "cardCount": 3
     },
     {
       "id": "numbers",
@@ -1131,7 +1461,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 7
+      "cardCount": 6
     },
     {
       "id": "accounts",
@@ -1142,7 +1472,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "groups",
@@ -1164,7 +1494,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "pull-group",
@@ -1175,7 +1505,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "integrations",
@@ -1263,7 +1593,29 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 7
+      "cardCount": 5
+    },
+    {
+      "id": "billing-tab1",
+      "width": 390,
+      "mode": "empty",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 5
+    },
+    {
+      "id": "billing-tab2",
+      "width": 390,
+      "mode": "empty",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 5
     },
     {
       "id": "profile",
@@ -1274,10 +1626,54 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 3
+      "cardCount": 1
+    },
+    {
+      "id": "profile-tab1",
+      "width": 390,
+      "mode": "empty",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "profile-tab2",
+      "width": 390,
+      "mode": "empty",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
     },
     {
       "id": "settings",
+      "width": 390,
+      "mode": "empty",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "settings-group0",
+      "width": 390,
+      "mode": "empty",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "settings-group1",
       "width": 390,
       "mode": "empty",
       "bodyOverflow": false,
@@ -1319,6 +1715,86 @@
       "outside": [],
       "overlay": [],
       "cardCount": 2
+    },
+    {
+      "id": "billing-overlay-账户充值",
+      "width": 1440,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [
+        {
+          "class": "el-drawer rtl open",
+          "left": 880,
+          "right": 1440,
+          "bottom": 1000,
+          "height": 1000,
+          "overflow": false
+        }
+      ],
+      "cardCount": 5
+    },
+    {
+      "id": "register-overlay-批量注册",
+      "width": 1440,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [
+        {
+          "class": "el-drawer rtl open",
+          "left": 960,
+          "right": 1440,
+          "bottom": 1000,
+          "height": 1000,
+          "overflow": false
+        }
+      ],
+      "cardCount": 6
+    },
+    {
+      "id": "mass-send-overlay-新建群发任务",
+      "width": 1440,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [
+        {
+          "class": "el-drawer rtl open",
+          "left": 880,
+          "right": 1440,
+          "bottom": 1000,
+          "height": 1000,
+          "overflow": false
+        }
+      ],
+      "cardCount": 1
+    },
+    {
+      "id": "pull-group-overlay-新建拉群任务",
+      "width": 1440,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [
+        {
+          "class": "el-drawer rtl open",
+          "left": 880,
+          "right": 1440,
+          "bottom": 1000,
+          "height": 1000,
+          "overflow": false
+        }
+      ],
+      "cardCount": 1
     },
     {
       "id": "numbers-overlay-批量导入号码",
@@ -1358,7 +1834,7 @@
           "overflow": false
         }
       ],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "mass-send-overlay-详情",
@@ -1368,17 +1844,8 @@
       "mainOverflow": false,
       "overflow": [],
       "outside": [],
-      "overlay": [
-        {
-          "class": "el-drawer rtl open",
-          "left": 980,
-          "right": 1440,
-          "bottom": 1000,
-          "height": 1000,
-          "overflow": false
-        }
-      ],
-      "cardCount": 2
+      "overlay": [],
+      "cardCount": 1
     },
     {
       "id": "pull-group-overlay-详情",
@@ -1388,17 +1855,8 @@
       "mainOverflow": false,
       "overflow": [],
       "outside": [],
-      "overlay": [
-        {
-          "class": "el-drawer rtl open",
-          "left": 1020,
-          "right": 1440,
-          "bottom": 1000,
-          "height": 1000,
-          "overflow": false
-        }
-      ],
-      "cardCount": 2
+      "overlay": [],
+      "cardCount": 1
     },
     {
       "id": "ads-overlay-新建文案",
@@ -1521,6 +1979,86 @@
       "cardCount": 2
     },
     {
+      "id": "billing-overlay-账户充值",
+      "width": 390,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [
+        {
+          "class": "el-drawer rtl open",
+          "left": 0,
+          "right": 390,
+          "bottom": 1000,
+          "height": 1000,
+          "overflow": false
+        }
+      ],
+      "cardCount": 5
+    },
+    {
+      "id": "register-overlay-批量注册",
+      "width": 390,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [
+        {
+          "class": "el-drawer rtl open",
+          "left": 0,
+          "right": 390,
+          "bottom": 1000,
+          "height": 1000,
+          "overflow": false
+        }
+      ],
+      "cardCount": 6
+    },
+    {
+      "id": "mass-send-overlay-新建群发任务",
+      "width": 390,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [
+        {
+          "class": "el-drawer rtl open",
+          "left": 0,
+          "right": 390,
+          "bottom": 1000,
+          "height": 1000,
+          "overflow": false
+        }
+      ],
+      "cardCount": 1
+    },
+    {
+      "id": "pull-group-overlay-新建拉群任务",
+      "width": 390,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [
+        {
+          "class": "el-drawer rtl open",
+          "left": 0,
+          "right": 390,
+          "bottom": 1000,
+          "height": 1000,
+          "overflow": false
+        }
+      ],
+      "cardCount": 1
+    },
+    {
       "id": "numbers-overlay-批量导入号码",
       "width": 390,
       "mode": "populated",
@@ -1558,7 +2096,7 @@
           "overflow": false
         }
       ],
-      "cardCount": 2
+      "cardCount": 1
     },
     {
       "id": "mass-send-overlay-详情",
@@ -1568,17 +2106,8 @@
       "mainOverflow": false,
       "overflow": [],
       "outside": [],
-      "overlay": [
-        {
-          "class": "el-drawer rtl open",
-          "left": 0,
-          "right": 390,
-          "bottom": 1000,
-          "height": 1000,
-          "overflow": false
-        }
-      ],
-      "cardCount": 2
+      "overlay": [],
+      "cardCount": 1
     },
     {
       "id": "pull-group-overlay-详情",
@@ -1588,17 +2117,8 @@
       "mainOverflow": false,
       "overflow": [],
       "outside": [],
-      "overlay": [
-        {
-          "class": "el-drawer rtl open",
-          "left": 0,
-          "right": 390,
-          "bottom": 1000,
-          "height": 1000,
-          "overflow": false
-        }
-      ],
-      "cardCount": 2
+      "overlay": [],
+      "cardCount": 1
     },
     {
       "id": "ads-overlay-新建文案",
@@ -1721,6 +2241,90 @@
       "cardCount": 2
     },
     {
+      "id": "dashboard-create-flow",
+      "width": 1440,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [
+        {
+          "class": "el-drawer rtl open",
+          "left": 880,
+          "right": 1440,
+          "bottom": 1000,
+          "height": 1000,
+          "overflow": false
+        }
+      ],
+      "cardCount": 1
+    },
+    {
+      "id": "numbers-selection-flow",
+      "width": 1440,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "groups-selection-flow",
+      "width": 1440,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "dashboard-create-flow",
+      "width": 390,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [
+        {
+          "class": "el-drawer rtl open",
+          "left": 0,
+          "right": 390,
+          "bottom": 1000,
+          "height": 1000,
+          "overflow": false
+        }
+      ],
+      "cardCount": 1
+    },
+    {
+      "id": "numbers-selection-flow",
+      "width": 390,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "groups-selection-flow",
+      "width": 390,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
       "id": "login",
       "width": 1440,
       "mode": "populated",
@@ -1729,7 +2333,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 4
+      "cardCount": 3
     },
     {
       "id": "404",
@@ -1751,7 +2355,7 @@
       "overflow": [],
       "outside": [],
       "overlay": [],
-      "cardCount": 4
+      "cardCount": 3
     },
     {
       "id": "404",
@@ -1763,6 +2367,90 @@
       "outside": [],
       "overlay": [],
       "cardCount": 0
+    },
+    {
+      "id": "cached-page-create",
+      "width": 1440,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [
+        {
+          "class": "el-drawer rtl open",
+          "left": 880,
+          "right": 1440,
+          "bottom": 600,
+          "height": 600,
+          "overflow": false
+        }
+      ],
+      "cardCount": 1
+    },
+    {
+      "id": "billing-default",
+      "width": 1440,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 5
+    },
+    {
+      "id": "profile-default",
+      "width": 1440,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
+    },
+    {
+      "id": "cached-page-create",
+      "width": 390,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [
+        {
+          "class": "el-drawer rtl open",
+          "left": 0,
+          "right": 390,
+          "bottom": 600,
+          "height": 600,
+          "overflow": false
+        }
+      ],
+      "cardCount": 1
+    },
+    {
+      "id": "billing-default",
+      "width": 390,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 5
+    },
+    {
+      "id": "profile-default",
+      "width": 390,
+      "mode": "populated",
+      "bodyOverflow": false,
+      "mainOverflow": false,
+      "overflow": [],
+      "outside": [],
+      "overlay": [],
+      "cardCount": 1
     }
   ],
   "errors": [],

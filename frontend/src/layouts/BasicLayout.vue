@@ -65,7 +65,7 @@
         </div>
       </el-header>
 
-      <el-main class="layout-main">
+      <el-main ref="mainPanel" class="layout-main">
         <router-view v-slot="{ Component }">
           <keep-alive :max="10">
             <component :is="Component" />
@@ -77,7 +77,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { UserFilled, User, SwitchButton } from '@element-plus/icons-vue'
@@ -93,6 +93,11 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
+const mainPanel = ref<{ $el: HTMLElement }>()
+watch(() => route.path, async () => {
+  await nextTick()
+  mainPanel.value?.$el.scrollTo({ top: 0, left: 0 })
+})
 const collapsed = ref(false)
 const narrowScreen = window.matchMedia('(max-width: 768px)')
 const compact = ref(narrowScreen.matches)

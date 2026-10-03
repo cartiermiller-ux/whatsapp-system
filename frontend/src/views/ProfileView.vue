@@ -8,8 +8,8 @@
       <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
     </div>
 
-    <el-row :gutter="16" class="card-row">
-      <el-col :xs="24" :md="10">
+    <el-tabs v-model="activeTab">
+      <el-tab-pane label="账号资料" name="profile">
         <el-card shadow="never" v-loading="loading">
           <template #header>
             <div class="card-header">
@@ -20,7 +20,7 @@
             </div>
           </template>
 
-          <el-form v-if="editing" label-width="90px" @submit.prevent>
+          <el-form class="focused-form" v-if="editing" label-width="90px" @submit.prevent>
             <el-form-item label="昵称">
               <el-input v-model="editForm.nickname" placeholder="用于界面展示" maxlength="64" />
             </el-form-item>
@@ -57,12 +57,11 @@
             <el-descriptions-item label="注册时间">{{ formatDateTime(me.created_at) }}</el-descriptions-item>
           </el-descriptions>
         </el-card>
-      </el-col>
-
-      <el-col :xs="24" :md="14">
+      </el-tab-pane>
+      <el-tab-pane label="安全设置" name="security">
         <el-card shadow="never">
           <template #header>修改密码</template>
-          <el-form ref="pwdFormRef" :model="pwdForm" :rules="pwdRules" label-width="100px">
+          <el-form class="focused-form" ref="pwdFormRef" :model="pwdForm" :rules="pwdRules" label-width="100px">
             <el-form-item label="当前密码" prop="old_password">
               <el-input v-model="pwdForm.old_password" type="password" show-password autocomplete="off" />
             </el-form-item>
@@ -79,8 +78,8 @@
           </el-form>
         </el-card>
 
-      </el-col>
-    </el-row>
+      </el-tab-pane>
+      <el-tab-pane label="操作记录" name="logs">
 
     <el-card shadow="never" class="section-gap">
       <template #header>
@@ -125,6 +124,8 @@
         />
       </div>
     </el-card>
+      </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
@@ -148,6 +149,7 @@ import {
 const auth = useAuthStore()
 const router = useRouter()
 
+const activeTab = ref('profile')
 const loading = ref(false)
 const me = ref<Partial<MeInfo>>({})
 

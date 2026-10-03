@@ -30,7 +30,7 @@
 
         <div class="row">
           <el-checkbox v-model="form.remember">记住我</el-checkbox>
-          <el-link type="primary" :underline="false" @click="onForgot">忘记密码？</el-link>
+          <el-link type="info" :underline="false" disabled title="密码找回暂未开放">忘记密码？</el-link>
         </div>
 
         <el-button
@@ -95,9 +95,6 @@ async function onSubmit() {
   }
 }
 
-function onForgot() {
-  ElMessage.info('密码找回功能待后端接口接入')
-}
 </script>
 
 <style scoped>

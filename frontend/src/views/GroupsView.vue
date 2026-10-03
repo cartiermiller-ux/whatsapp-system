@@ -5,20 +5,7 @@
         <h2>资源群管理</h2>
         <div class="sub">群列表 · 营销价值分排序 · 群链接</div>
       </div>
-      <div class="actions">
-        <el-button
-          type="primary"
-          :icon="Link"
-          :loading="fetching"
-          :disabled="selectedIds.length === 0"
-          @click="fetchLinks"
-        >
-          批量获取群链接{{ selectedIds.length ? `(${selectedIds.length})` : '' }}
-        </el-button>
-        <el-button :icon="Upload" @click="notReady('导入群资源')">导入</el-button>
-        <el-button :icon="Download" @click="notReady('导出群资源')">导出</el-button>
-        <el-button type="danger" plain :icon="Delete" @click="notReady('批量删除')">批量删除</el-button>
-      </div>
+      <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
     </div>
 
 
@@ -36,9 +23,21 @@
           <el-option label="活跃" value="active" />
           <el-option label="停用" value="disabled" />
         </el-select>
-        <el-button type="primary" :icon="Search" @click="reload">查询</el-button>
+        <el-button :icon="Search" @click="reload">查询</el-button>
         <el-button @click="resetFilters">重置</el-button>
         <el-tag type="info" effect="plain">按营销价值分降序</el-tag>
+      </div>
+      <div v-if="selectedIds.length" class="batch-toolbar">
+        <span>已选择 {{ selectedIds.length }} 个资源群</span>
+        <el-button
+          type="primary"
+          :icon="Link"
+          :loading="fetching"
+          :disabled="selectedIds.length === 0"
+          @click="fetchLinks"
+        >
+          批量获取群链接{{ selectedIds.length ? `(${selectedIds.length})` : '' }}
+        </el-button>
       </div>
       <el-table v-loading="loading" :data="rows" stripe @selection-change="onSelectionChange">
         <el-table-column type="selection" width="46" />
@@ -121,7 +120,7 @@
       type="info"
       :closable="false"
       show-icon
-      title="群 JID / 群链接 / 账号 / 号段 / 管理员等更多筛选维度待后端补充查询参数；批量获取群链接、导入导出、批量删除接口未提供。"
+      title="群资源导入、导出、删除及更多筛选条件暂未开放。"
     />
   </div>
 </template>
@@ -129,7 +128,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Link, Upload, Download, Delete, Search } from '@element-plus/icons-vue'
+import { Link, Refresh, Search } from '@element-plus/icons-vue'
 import { groupApi } from '@/api'
 import type { GroupRow } from '@/types/api'
 
@@ -200,9 +199,6 @@ function resetFilters() {
   reload()
 }
 
-function notReady(feature: string) {
-  ElMessage.info(`「${feature}」依赖的后端接口尚未提供，已列为待接入。`)
-}
 
 onMounted(load)
 </script>
