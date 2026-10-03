@@ -74,8 +74,67 @@ Baileys 内部会重连，**往往等几分钟后某次重连拿到好 IP 就突
    157.240.11.53  web.whatsapp.com
    ```
 3. **重跑脚本**：DNS 答案是轮换的，重启就可能拿到好 IP
-4. 确认代理端口确实可用：`python tests/wa_net_diag.py` 会检测 `127.0.0.1:10808` 等常见端口
-   的 SOCKS5 / HTTP CONNECT 是否真的能建立到 `web.whatsapp.com:443` 的隧道
+4. 确认代理端口确实可用：`python tools/check_network.py --scan` 会检测 `127.0.0.1:10808` 等
+   常见端口的 SOCKS5 / HTTP CONNECT 是否真的能建立到 `web.whatsapp.com:443` 的隧道
+5. **让 Node 自己走代理（本项目已支持，最省事）**：不用改 hosts、不用开 TUN 全局，
+   直接把代理地址给 Node 服务：
+
+   ```powershell
+   $env:WA_PROXY_URL = "http://127.0.0.1:7890"        # Clash 混合端口
+   $env:WA_PROXY_URL = "socks5://127.0.0.1:10808"     # v2rayN / Nekoray 的 SOCKS5
+   python -m uvicorn main:app --port 8000
+   ```
+
+   后端拉起 Node 时会把 `WA_PROXY_URL` 透传下去，`deploy/wasock/server.js` 用它给
+   Baileys 的 WebSocket 和媒体下载都挂上代理（`agent` / `fetchAgent`）。
+   HTTP 代理开箱可用；SOCKS5 需要额外装包：`npm i -g socks-proxy-agent`。
+   配好后在面板「账号管理 → 扫码登录 WhatsApp」就能出码。
+
+   启动前先体检，一条命令看清链路：
+
+   ```powershell
+   python tools/check_network.py --proxy socks5://127.0.0.1:10808 --scan
+   ```
+
+   看到 `[OK] HTTP/1.1 101` 就说明 TLS + WebSocket 握手都通了，扫码和发消息都没问题。
+
+### 另一个隐性卡点：Baileys 版本号请求会永久挂起（已修复）
+
+即使代理配好了，旧版 `server.js` 仍可能卡住 —— 它在 `start` 分支里：
+
+```javascript
+const { version } = await fetchLatestBaileysVersion();   // 请求 raw.githubusercontent.com
+```
+
+这个请求打的是 GitHub，国内网络下同样会被黑洞：**连接既不成功也不报错，Promise 永不 resolve**。
+而 `start` 是 `await` 完才回包，于是前端看到的就是「二维码一直转圈」，且永远不会超时。
+
+实测数据（本机）：
+
+| 场景 | 耗时 |
+|---|---|
+| 原始 `fetchLatestBaileysVersion()` | **20 秒仍无响应（挂死）** |
+| 修复后 `start` 回包（跳过联网） | 0.04s |
+| 修复后 `start` 回包（联网失败走回退） | 0.54s |
+
+`deploy/wasock/server.js` 的修复方式：
+
+- 给 `fetchLatestBaileysVersion` 传 `timeout` + 代理 `httpsAgent`，外面再套一层
+  `Promise.race` 硬超时（双保险，axios 的 timeout 兜不住的场景也能脱身）
+- 超时/失败就回退到 Baileys **内置版本号**（`lib/Defaults/baileys-version.json`），照常出码
+- 版本号**只解析一次并缓存**，断线重连不会反复去网上拉
+
+可用的环境变量：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `WA_PROXY_URL` | 空 | `http://…` 或 `socks5://…`，空则直连 |
+| `WA_VERSION_TIMEOUT_MS` | `5000` | 取版本号的超时；**设为 `0` 则完全不联网**，直接用内置版本 |
+| `WA_BAILEYS_VERSION` | 空 | 手动指定 `2.3000.1043857760` 这样的版本号，跳过联网 |
+| `WA_PORT` | `5000` | Node 服务端口，后端会跟着 `WASOCK_PORT` 自动设置 |
+
+对应的回归测试：`python tests/wasock_wiring_test.py`（11 项断言，会真的拉起 node 进程验证
+`setup` / `start` 一定回包）。
 
 ### 用推荐脚本
 

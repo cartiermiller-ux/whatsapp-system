@@ -87,6 +87,12 @@ whatsapp-system/
 │   ├── proxy_provider.py    # 代理：mock / byteful(Ping Proxies) / static
 │   ├── message_provider.py  # 发消息：wasock / wsapi / mock
 │   └── account_provider.py  # 账号采购：mock / http
+├── deploy/
+│   └── wasock/
+│       ├── server.js        # wasock Node 服务的改良版：代理支持 + 版本号超时兜底
+│       └── assets/          # isauthvalid.js / resolvebrowser.js
+├── tools/
+│   └── check_network.py     # WhatsApp 连通性体检：DNS / 直连 / 代理隧道 / TLS+WS 握手
 ├── env.example.ps1          # 所有对接相关环境变量示例
 ├── requirements.txt         # 后端依赖（wasock 仅登录脚本需要，后端不需要）
 ├── whatsapp_auth/           # ⚠️ WhatsApp 登录态，已在 .gitignore 中，勿提交
@@ -100,7 +106,9 @@ whatsapp-system/
 │   ├── integrations_test.py # 第三方对接自测（56 项断言，不联网）
 │   ├── p2_api_test.py       # 接口回归（109 项断言）
 │   ├── mass_send_http_test.py
-│   └── wa_net_diag.py       # WhatsApp 连通性诊断
+│   ├── whatsapp_session_test.py
+│   ├── wasock_wiring_test.py # 真拉起 node 进程，验证 setup/start 一定回包
+│   └── wa_net_diag.py       # WhatsApp 连通性诊断（旧版，建议用 tools/check_network.py）
 └── frontend/
     ├── src/
     │   ├── api/             # axios 封装 + 各模块 API 客户端
@@ -358,8 +366,18 @@ python tests/real_send_test.py        # 61 项：发送逻辑与传输层，不�
 python tests/integrations_test.py     # 56 项：代理/接码/采购对接，不联网
 python tests/p2_api_test.py           # 109 项：接口回归（需 8099 服务，见 tests/README.md）
 python tests/mass_send_http_test.py   # 9 项：群发 HTTP 链路
-python tests/wa_net_diag.py           # WhatsApp 连通性诊断
+python tests/whatsapp_session_test.py # 35 项：登录态与会话管理
+python tests/wasock_wiring_test.py    # 11 项：真拉起 node，验证握手与 start 回包
 ```
+
+网络不通时，先用体检脚本把链路一次看清：
+
+```powershell
+python tools/check_network.py --scan                                  # 直连诊断 + 扫本机代理端口
+python tools/check_network.py --proxy socks5://127.0.0.1:10808        # 走代理做完整握手
+```
+
+看到 `[OK] HTTP/1.1 101` 就说明 WhatsApp 链路完全可用。
 
 详见 [`tests/README.md`](tests/README.md)。
 
@@ -368,8 +386,14 @@ python tests/wa_net_diag.py           # WhatsApp 连通性诊断
 ## 常见问题
 
 **Q：二维码一直不出现？**
-先跑 `python tests/wa_net_diag.py`。最常见原因是 DNS 污染导致 `web.whatsapp.com` 解析到被黑洞的 IP，
-TCP 握手停在 `SYN_SENT`，Node 端既不报错也不出码。处理办法见 [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)。
+先跑 `python tools/check_network.py --scan`。国内网络下有两处会卡住：
+
+1. DNS 污染让 `web.whatsapp.com` 解析到被黑洞的 IP，TCP 握手停在 `SYN_SENT`；
+2. Baileys 取版本号时请求 GitHub，同样被黑洞，**Promise 永不 resolve**，`start` 就一直不回包。
+
+解决办法是给 Node 一个代理：`$env:WA_PROXY_URL = "socks5://127.0.0.1:10808"`（第 2 点已在
+`deploy/wasock/server.js` 里做了超时 + 内置版本兜底）。详见
+[`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)。
 
 **Q：打开开关后群发任务立刻 failed，日志写"新设备冷却中"？**
 账号 `created_at` 在冷却期内。把系统设置的 **新设备冷却（小时）** 改成 0 即可。

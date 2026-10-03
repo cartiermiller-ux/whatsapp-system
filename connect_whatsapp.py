@@ -22,13 +22,15 @@ from wasock import WhatsAppSocket, QRCode, Browser
 """
 import socket
 import sys
+from pathlib import Path
 import threading
 import time
 
 from wasock import Browser, QRCode, WhatsAppSocket
 
-AUTH_NAME = "whatsapp_auth"
-QR_FILE = "qr.png"
+BASE_DIR = Path(__file__).resolve().parent   # 锚定脚本所在目录，避免 cwd 影响
+AUTH_NAME = str(BASE_DIR / "whatsapp_auth")
+QR_FILE = str(BASE_DIR / "qr.png")
 LOGGER_LEVEL = "warn"      # 想看得更细可改成 "debug"
 WA_HOST = "web.whatsapp.com"
 QR_WAIT_SECONDS = 120      # 等待出码

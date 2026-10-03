@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import socket
+from pathlib import Path
 import struct
 import time
 from dataclasses import dataclass, field, asdict
@@ -31,7 +32,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .base import HttpClient, ProviderError, ProviderStatus, env, env_int, mask_secret
 
-DEFAULT_FALLBACK_FILE = env("PROXY_LIST_FILE", "proxies.txt")
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_FALLBACK_FILE = env("PROXY_LIST_FILE", str(PROJECT_DIR / "proxies.txt"))
 
 
 @dataclass

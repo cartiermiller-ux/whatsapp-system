@@ -152,7 +152,9 @@ print("===== 2.5 多账号：登录态目录管理 =====")
 import tempfile  # noqa: E402
 
 workdir = Path(tempfile.mkdtemp(prefix="wa_dirs_"))
-os.chdir(workdir)
+# 目录解析现在锚定 PROJECT_DIR（不再跟 cwd 走），所以临时把它指向临时目录
+_original_project_dir = ws.PROJECT_DIR
+ws.PROJECT_DIR = workdir
 try:
     check("目录都不存在时，下一个可用目录就是默认名", ws.next_auth_name("wa") == "wa")
     (workdir / "wa").mkdir()
@@ -169,8 +171,9 @@ try:
     check("解绑会删除目录", ws.remove_auth_dir("wa") is True and not (workdir / "wa").exists())
     check("解绑不存在的目录返回 False", ws.remove_auth_dir("not-there") is False)
 finally:
-    os.chdir(Path(__file__).resolve().parent.parent)
+    ws.PROJECT_DIR = _original_project_dir
     shutil.rmtree(workdir, ignore_errors=True)
+check("测试结束后 PROJECT_DIR 已还原", ws.PROJECT_DIR == _original_project_dir, ws.PROJECT_DIR)
 
 print()
 print("===== 3. 会话流程（假 Node 服务）=====")

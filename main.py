@@ -27,7 +27,11 @@ def normalize_source_type(value: str) -> str:
     return SOURCE_TYPE_ALIASES.get(key, key)
 
 # ---------- 数据库 ----------
-DATABASE_URL = os.environ.get("WHATSAPP_DATABASE_URL", "sqlite:///./whatsapp.db")
+# 默认库固定放在项目目录下（锚定 main.py），而不是跟着启动时的 cwd 走；
+# 否则从别的目录启动 uvicorn 会静默连到另一个空库。
+BASE_DIR = Path(__file__).resolve().parent
+DEFAULT_DATABASE_URL = f"sqlite:///{(BASE_DIR / 'whatsapp.db').as_posix()}"
+DATABASE_URL = os.environ.get("WHATSAPP_DATABASE_URL", DEFAULT_DATABASE_URL)
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},

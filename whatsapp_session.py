@@ -26,6 +26,7 @@ from typing import Any, Dict, Optional
 
 WASOCK_HOST = os.environ.get("WASOCK_HOST", "127.0.0.1")
 WASOCK_PORT = int(os.environ.get("WASOCK_PORT", "5000"))
+PROJECT_DIR = Path(__file__).resolve().parent      # 一律以项目目录为锚点
 DEFAULT_AUTH_NAME = os.environ.get("WASOCK_AUTH_NAME", "whatsapp_auth")
 AUTH_NAME = DEFAULT_AUTH_NAME          # 兼容旧引用
 LOGGER_LEVEL = os.environ.get("WASOCK_LOGGER_LEVEL", "warn")
@@ -34,23 +35,46 @@ START_TIMEOUT = 40.0        # startBaileys 要拉版本、建 socket，给宽一
 QR_TIMEOUT = 20.0
 
 
-def find_server_js() -> Optional[str]:
-    """定位 wasock 的 node/server.js。
+PROJECT_SERVER_JS = PROJECT_DIR / "deploy" / "wasock" / "server.js"
 
-    用 find_spec 只找位置、不导入模块，避免后端重新依赖 wasock 这个 Python 包。
-    也可以用 WASOCK_SERVER_JS 环境变量直接指定。
-    """
-    explicit = os.environ.get("WASOCK_SERVER_JS")
-    if explicit and Path(explicit).is_file():
-        return explicit
+
+def _wasock_package_dir() -> Optional[Path]:
+    """wasock 包所在目录。用 find_spec 只找位置、不导入模块。"""
     try:
         spec = importlib.util.find_spec("wasock")
     except (ImportError, ValueError):
         return None
     if not spec or not spec.origin:
         return None
-    candidate = Path(spec.origin).parent / "node" / "server.js"
+    return Path(spec.origin).parent
+
+
+def find_server_js() -> Optional[str]:
+    """定位 server.js。
+
+    优先用项目里 deploy/wasock/server.js —— 它比 wasock 自带的多一个代理支持
+    （国内服务器连不上 WhatsApp，必须走代理）。
+    其次才是 wasock 自带的，也可以用 WASOCK_SERVER_JS 直接指定。
+    """
+    if PROJECT_SERVER_JS.is_file():
+        return str(PROJECT_SERVER_JS)
+    explicit = os.environ.get("WASOCK_SERVER_JS")
+    if explicit and Path(explicit).is_file():
+        return explicit
+    package = _wasock_package_dir()
+    if not package:
+        return None
+    candidate = package / "node" / "server.js"
     return str(candidate) if candidate.is_file() else None
+
+
+def find_node_modules() -> str:
+    """wasock 自带的 node_modules —— 项目里的 server.js 靠 NODE_PATH 找到 baileys。"""
+    package = _wasock_package_dir()
+    if not package:
+        return ""
+    modules = package / "node" / "node_modules"
+    return str(modules) if modules.is_dir() else ""
 
 
 class SessionError(Exception):
@@ -80,13 +104,22 @@ class SessionState:
         return data
 
 
+def auth_path(auth_name: str) -> Path:
+    """把登录态目录名解析成绝对路径。
+
+    传绝对路径原样返回；传名字则挂到项目目录下，因此不受启动时 cwd 影响。
+    """
+    path = Path(auth_name)
+    return path if path.is_absolute() else PROJECT_DIR / path
+
+
 def next_auth_name(base: str = "") -> str:
     """给「关联新账号」挑一个尚未使用的登录态目录名。
 
     已配对的目录里不会再出二维码，所以必须用一个全新的目录才能扫新号。
     """
     base = base or DEFAULT_AUTH_NAME
-    existing = {path.name for path in Path(".").glob(f"{base}*") if path.is_dir()}
+    existing = {path.name for path in PROJECT_DIR.glob(f"{base}*") if path.is_dir()}
     index = 1
     while True:
         candidate = base if index == 1 else f"{base}_{index}"
@@ -99,7 +132,7 @@ def list_auth_dirs(base: str = "") -> list:
     """列出本机已有的登录态目录及其配对号码，供界面展示与切换。"""
     base = base or DEFAULT_AUTH_NAME
     result = []
-    for path in sorted(Path(".").glob(f"{base}*")):
+    for path in sorted(PROJECT_DIR.glob(f"{base}*")):
         if not path.is_dir():
             continue
         phone = read_paired_phone(str(path))
@@ -115,9 +148,12 @@ def list_auth_dirs(base: str = "") -> list:
 def remove_auth_dir(auth_name: str) -> bool:
     """解绑：删掉登录态目录（不可恢复）。"""
     import shutil
-    path = Path(auth_name)
+    path = auth_path(auth_name)
     if not path.is_dir() or path.name in ("", ".", ".."):
         return False
+    # 安全起见只允许删项目目录下的东西
+    if PROJECT_DIR not in path.resolve().parents:
+        raise ValueError(f"拒绝删除项目目录之外的路径：{path}")
     shutil.rmtree(path, ignore_errors=True)
     return True
 
@@ -129,7 +165,7 @@ def read_paired_phone(auth_name: str = "") -> str:
     "8613800000000:12@s.whatsapp.net"），registered 在部分流程里会一直是 false，
     不能只看它。解析不出来就返回空串。
     """
-    creds = Path(auth_name or AUTH_NAME) / "creds.json"
+    creds = auth_path(auth_name or AUTH_NAME) / "creds.json"
     if not creds.is_file():
         return ""
     try:
@@ -177,7 +213,10 @@ class WhatsAppSession:
             # 只刷新"服务在不在"，不要动 status：
             # 之前这里会把 error 抹成 idle，失败原因就被藏起来了
             self._state.node_running = is_node_running()
-            return self._state.to_dict()
+            data = self._state.to_dict()
+            data["proxy_url"] = os.environ.get("WA_PROXY_URL", "")
+            data["server_js"] = "project" if PROJECT_SERVER_JS.is_file() else "wasock"
+            return data
 
     def start(self, auth_name: str = "") -> Dict[str, Any]:
         """启动会话。Node 服务没起就拉起，然后 setup + start 并开始收二维码。
@@ -234,7 +273,19 @@ class WhatsAppSession:
         creation = 0
         if os.name == "nt":
             creation = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        self._process = subprocess.Popen(["node", server_js], creationflags=creation)
+
+        env = dict(os.environ)
+        modules = find_node_modules()
+        if modules:
+            # 项目里的 server.js 在 deploy/wasock 下，靠 NODE_PATH 才能 require 到 baileys
+            env["NODE_PATH"] = modules
+        # server.js 默认监听 5000，这里跟随 WASOCK_PORT，避免改了端口后两边对不上
+        env["WA_PORT"] = str(WASOCK_PORT)
+        if env.get("WA_PROXY_URL"):
+            print(f"[wasock] 使用代理：{env['WA_PROXY_URL']}", flush=True)
+        else:
+            print("[wasock] 未配置 WA_PROXY_URL，将直连 WhatsApp（国内网络会失败）", flush=True)
+        self._process = subprocess.Popen(["node", server_js], creationflags=creation, env=env)
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             if is_node_running():
@@ -242,14 +293,16 @@ class WhatsAppSession:
                     self._state.node_owned = True
                 return
             time.sleep(0.3)
-        raise SessionError("wasock Node 服务启动超时（端口 5000 未被监听）")
+        raise SessionError(f"wasock Node 服务启动超时（端口 {WASOCK_PORT} 未被监听）")
 
     def _open_and_start(self, auth_name: str) -> None:
         sock = socket.create_connection((WASOCK_HOST, WASOCK_PORT), CONNECT_TIMEOUT)
         sock.settimeout(START_TIMEOUT)
         try:
             # setup 告诉 Node 端用哪个登录态目录
-            setup = {"action": "setup", "loggerLevel": LOGGER_LEVEL, "authName": auth_name,
+            # 传绝对路径：server.js 内部按 Node 进程的 cwd 解析，相对路径会跑偏
+            setup = {"action": "setup", "loggerLevel": LOGGER_LEVEL,
+                     "authName": str(auth_path(auth_name)),
                      "browserInfo": ["ubuntu", "Chrome", "14.4.1"], "syncFullHistory": False}
             sock.sendall(json.dumps(setup).encode() + b"\n")
             buffer = b""

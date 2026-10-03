@@ -45,5 +45,18 @@ $env:ACCOUNT_PROVIDER = "mock"
 $env:WASOCK_HOST = "127.0.0.1"
 $env:WASOCK_PORT = "5000"
 
+# ---------- WhatsApp 网络出口（国内必配） ----------
+# 国内直连 web.whatsapp.com 会被黑洞（TCP 握手停在 SYN_SENT），必须给 Node 一个代理。
+# 不配就直连，只会一直转圈出不来二维码。
+# $env:WA_PROXY_URL = "http://127.0.0.1:7890"        # Clash / Mihomo 混合端口
+# $env:WA_PROXY_URL = "socks5://127.0.0.1:10808"     # v2rayN / Nekoray（需 npm i -g socks-proxy-agent）
+# 取 Baileys 版本号的超时；设成 0 就完全不联网，直接用内置版本
+$env:WA_VERSION_TIMEOUT_MS = "5000"
+# 也可以手动钉死版本号，彻底跳过联网
+# $env:WA_BAILEYS_VERSION = "2.3000.1043857760"
+
+# 配好之后先体检，看到 [OK] HTTP/1.1 101 再启动后端：
+#   python tools/check_network.py --proxy $env:WA_PROXY_URL --scan
+
 # ---------- 群发真实发送总开关 ----------
 $env:USE_REAL_SEND = "false"
