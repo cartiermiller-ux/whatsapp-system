@@ -1053,7 +1053,39 @@ def get_invite_task(task_id: int, db: Session = Depends(get_db)):
 # 总开关：默认关闭，群发任务走 simulate_mass_send（模拟发送，不联网）。
 # 打开方式（必须在启动后端之前设好环境变量）：
 #     $env:USE_REAL_SEND="true"; python -m uvicorn main:app --reload
+# 启动时的快照，仅用于日志展示；真正判断走 real_send_enabled()（运行时读，改完不用重启）
 USE_REAL_SEND = os.environ.get("USE_REAL_SEND", "false").strip().lower() == "true"
+
+
+def _env_file_value(name: str) -> str:
+    """从项目目录下的 .env 取一个值。每次调用重新读盘，改完不用重启后端。"""
+    try:
+        text = (BASE_DIR / ".env").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if key.startswith("export "):
+            key = key[len("export "):].strip()
+        if key == name:
+            return value.strip().strip('"').strip("'")
+    return ""
+
+
+def real_send_enabled() -> bool:
+    """真实发送总开关：环境变量优先，其次项目目录下的 .env。
+
+    默认 false —— 账号养好之前必须保持关闭，不然群发会真的把消息发出去。
+    运行时读取，所以改完 .env 不用重启后端，下一个任务就生效。
+    """
+    value = os.environ.get("USE_REAL_SEND")
+    if value in (None, ""):
+        value = _env_file_value("USE_REAL_SEND")
+    return str(value or "").strip().lower() == "true"
 
 # wasock 的会话由 connect_whatsapp.py 负责建立并保持运行，后端只往它的 Node 服务发指令。
 # 这里不 import wasock：后端不需要、也不应该去拉起第二个 Node 进程抢 5000 端口。
@@ -1322,10 +1354,15 @@ def real_mass_send(task_id: int, db: Session):
 
 
 def dispatch_mass_send(task_id: int, db: Session):
-    """群发入口：按 USE_REAL_SEND 决定走真实发送还是模拟发送（当前默认模拟）。"""
-    if USE_REAL_SEND:
+    """群发入口：按 USE_REAL_SEND 决定走真实发送还是模拟发送（默认模拟）。
+
+    开关是运行时读的（环境变量优先，其次 .env），所以改完 .env 不用重启后端。
+    """
+    if real_send_enabled():
+        print(f"[群发] 任务 #{task_id} 走【真实发送】—— 消息会真的发出去", flush=True)
         real_mass_send(task_id, db)
     else:
+        print(f"[群发] 任务 #{task_id} 走【模拟发送】（USE_REAL_SEND=false）", flush=True)
         simulate_mass_send(task_id, db)
 
 # ============================================================
