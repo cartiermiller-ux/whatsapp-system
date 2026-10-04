@@ -25,18 +25,18 @@
           {{ state.paired_phone }}
           <template v-if="state.registered">（账号 #{{ state.account_id }}）</template>
         </span>
-        <span v-if="state.auth_name" class="muted mono">{{ state.auth_name }}</span>
       </div>
 
       <p class="hint" :class="{ 'hint-error': isProblem }">{{ state.hint }}</p>
+      <el-button v-if="isProblem" link type="primary" @click="openServiceSettings">配置出口代理</el-button>
       <p v-if="state.qr_image" class="hint muted">二维码约 20 秒自动轮换，扫不出来就等下一张。</p>
 
       <!-- 已有关联过的账号：一键切换 -->
       <div v-if="otherSessions.length" class="sessions">
-        <div class="sessions-title muted">其它已关联的账号</div>
+        <div class="sessions-title muted">其他已关联账号</div>
         <div v-for="item in otherSessions" :key="item.auth_name" class="session-row">
           <span class="mono">{{ item.paired_phone || item.auth_name }}</span>
-          <span class="muted">账号 #{{ item.account_id }}</span>
+          <span class="muted">账号 #{{ item.account_id }} · {{ item.status === 'connected' ? '在线' : '未连接' }}</span>
           <el-button link type="primary" :disabled="busy" @click="switchTo(item)">使用</el-button>
           <el-button link type="danger" :disabled="busy" @click="unlink(item)">解绑</el-button>
         </div>
@@ -59,7 +59,7 @@
         :loading="busy"
         @click="register"
       >
-        登记到账号池
+        完成账号接入
       </el-button>
     </template>
   </el-dialog>
@@ -67,6 +67,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Iphone, Loading } from '@element-plus/icons-vue'
 import { whatsappApi } from '@/api'
@@ -74,6 +75,11 @@ import type { WhatsAppSessionItem, WhatsAppStatus } from '@/types/api'
 
 defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean]; registered: [] }>()
+const router = useRouter()
+function openServiceSettings() {
+  emit('update:modelValue', false)
+  router.push('/integrations')
+}
 
 const POLL_MS = 3000
 
@@ -130,9 +136,9 @@ const isProblem = computed(() => ['closed', 'error', 'unavailable'].includes(sta
 const canStart = computed(() =>
   !['unavailable', 'starting', 'waiting_qr'].includes(state.value.status) || state.value.status === 'idle',
 )
-const canStop = computed(() => ['waiting_qr', 'starting', 'connected'].includes(state.value.status))
+const canStop = computed(() => ['waiting_qr', 'starting', 'connected', 'closed', 'error'].includes(state.value.status))
 
-/** 除当前会话外，其它已配对、且已登记到账号池的登录态 */
+/** 除当前会话外，其它已配对、且已完成账号接入的登录态 */
 const otherSessions = computed(() =>
   sessions.value.filter(
     (item) => item.paired && item.account_id && item.auth_name !== state.value.auth_name,
@@ -148,7 +154,7 @@ const emptyText = computed(() => {
 
 async function load() {
   try {
-    const [status, list] = await Promise.all([whatsappApi.status(), whatsappApi.sessions()])
+    const [status, list] = await Promise.all([whatsappApi.status(state.value.auth_name), whatsappApi.sessions()])
     state.value = status
     sessions.value = list.list
   } catch {
@@ -200,7 +206,7 @@ async function switchTo(item: WhatsAppSessionItem) {
   busy.value = true
   try {
     state.value = await whatsappApi.switchAccount(item.account_id as number)
-    ElMessage.success('已切换会话')
+    ElMessage.success('已选择账号，其他账号保持在线')
     await load()
   } catch {
     /* 拦截器已提示 */
@@ -214,7 +220,7 @@ async function unlink(item: WhatsAppSessionItem) {
     await ElMessageBox.confirm(
       `解绑 ${item.paired_phone || item.auth_name}？登录态目录会被删除，手机上也要移除该设备。`,
       '解绑账号',
-      { type: 'warning' },
+      { type: 'warning', confirmButtonText: '解绑账号', cancelButtonText: '取消', closeOnClickModal: false },
     )
   } catch {
     return
@@ -232,9 +238,10 @@ async function unlink(item: WhatsAppSessionItem) {
 }
 
 async function stop() {
+  try { await ElMessageBox.confirm('断开此账号会影响正在使用它的团队成员，其他账号保持在线。确认断开？', '断开账号', { type: 'warning' }) } catch { return }
   busy.value = true
   try {
-    state.value = await whatsappApi.stop()
+    state.value = await whatsappApi.stop(state.value.auth_name)
     ElMessage.success('已停止会话')
     await load()
   } catch {
@@ -247,7 +254,7 @@ async function stop() {
 async function register() {
   busy.value = true
   try {
-    const res = await whatsappApi.registerAccount()
+    const res = await whatsappApi.registerAccount(state.value.auth_name)
     ElMessage.success(res.message)
     await load()
     emit('registered')

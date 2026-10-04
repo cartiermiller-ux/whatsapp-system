@@ -1,79 +1,23 @@
 <template>
-  <div class="page">
+  <PageTemplate kind="list">
     <div class="page-header">
       <div>
-        <h2>资源对接</h2>
-        <div class="sub">代理 IP · 接码平台 · 账号采购 · 发消息通道</div>
+        <h2>{{ embedded ? purchaseMode === 'history' ? '购买历史' : '账号商城' : '资源对接' }}</h2>
+        <div class="sub">{{ embedded ? '对接已配置的第三方账号供应商' : '统一管理代理资源、分组、接码订单和账号采购' }}</div>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="loadCurrent">刷新</el-button>
     </div>
 
     <el-tabs v-model="activeTab">
-      <!-- ==================== 集成状态 ==================== -->
-      <el-tab-pane label="集成状态" name="providers">
-        <el-alert
-          v-if="status && status.available === false"
-          type="error"
-          :closable="false"
-          show-icon
-          :title="`providers 包不可用：${status.error || '未知原因'}`"
-        />
-        <template v-else>
-          <el-row :gutter="16" class="card-row">
-            <el-col v-for="item in providers" :key="item.kind" :xs="24" :md="12">
-              <el-card shadow="never" class="provider-card">
-                <template #header>
-                  <div class="card-header">
-                    <span>{{ PROVIDER_KIND_LABEL[item.kind] || item.kind }}</span>
-                    <span>
-                      <el-tag :type="item.configured ? 'success' : 'danger'" size="small" effect="plain">
-                        {{ item.configured ? '已配置' : '未配置' }}
-                      </el-tag>
-                      <el-tag v-if="item.mock" type="warning" size="small" class="tag-gap">模拟</el-tag>
-                    </span>
-                  </div>
-                </template>
-                <el-descriptions :column="1" size="small" border>
-                  <el-descriptions-item label="实现">{{ item.name }}</el-descriptions-item>
-                  <el-descriptions-item label="说明">{{ item.detail || '-' }}</el-descriptions-item>
-                  <el-descriptions-item v-if="item.balance !== null" label="余额">
-                    {{ item.balance }}
-                  </el-descriptions-item>
-                  <el-descriptions-item v-if="item.pool" label="代理池">
-                    空闲 {{ item.pool.free }} / 占用 {{ item.pool.in_use }} / 停用 {{ item.pool.disabled }}
-                  </el-descriptions-item>
-                </el-descriptions>
-                <div v-if="item.kind === 'proxy'" class="card-actions">
-                  <el-button size="small" :loading="syncing" @click="syncProxies">从供应商同步代理</el-button>
-                </div>
-              </el-card>
-            </el-col>
-          </el-row>
-
-          <el-card v-if="status" shadow="never" class="section-gap">
-            <template #header>运行配置</template>
-            <el-descriptions :column="2" border size="small">
-              <el-descriptions-item label="发消息通道">
-                {{ status.config.message_provider }}
-              </el-descriptions-item>
-              <el-descriptions-item label="缺少代理时中断注册">
-                {{ status.config.proxy_required ? '是' : '否（仅记日志）' }}
-              </el-descriptions-item>
-            </el-descriptions>
-            <div class="field-hint">
-              所有供应商在未配置密钥时都会自动退化为模拟实现，系统照常可跑；配置方式见
-              docs/INTEGRATIONS.md 与 env.example.ps1。
-            </div>
-          </el-card>
-        </template>
-      </el-tab-pane>
-
       <!-- ==================== 代理池 ==================== -->
-      <el-tab-pane label="代理池" name="proxies">
+      <el-tab-pane v-if="!embedded" label="代理池" name="proxies">
+        <el-alert title="在这里统一导入代理并设置默认出口。扫码及未单独分配代理的账号会使用默认出口；更换后需重新连接会话。" type="info" :closable="false" class="block-gap" />
 
 
         <el-card shadow="never">
           <div class="filter-bar">
+            <el-radio-group v-model="proxyFilters.proxy_type" @change="reloadProxies"><el-radio-button value="">全部</el-radio-button><el-radio-button value="static">静态 IP</el-radio-button><el-radio-button value="dynamic">动态 IP</el-radio-button></el-radio-group>
+            <el-select v-model="proxyFilters.group_id" placeholder="代理分组" clearable style="width:150px"><el-option v-for="group in proxyGroups" :key="group.id" :label="group.name" :value="group.id"/></el-select>
             <el-select v-model="proxyFilters.status" placeholder="状态" style="width: 130px" clearable>
               <el-option
                 v-for="(label, key) in PROXY_STATUS_LABEL"
@@ -96,14 +40,16 @@
           </div>
           <el-table v-loading="proxyLoading" :data="proxyRows" stripe>
             <el-table-column prop="id" label="ID" width="70" />
-            <el-table-column prop="address" label="代理地址" min-width="250" show-overflow-tooltip />
+            <el-table-column label="代理地址" min-width="250" show-overflow-tooltip><template #default="{row}"><div>{{row.address}}</div><small class="muted">{{row.provider==='mock'?'模拟代理':row.provider}}<template v-if="row.bound_number_id"> · 号码 #{{row.bound_number_id}}</template></small></template></el-table-column>
             <el-table-column label="协议" width="90">
               <template #default="{ row }">
                 <el-tag size="small" effect="plain">{{ row.protocol }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column prop="country" label="国家" width="80" />
-            <el-table-column prop="provider" label="来源" width="110" />
+            <el-table-column label="分组" width="140"><template #default="{ row }">{{ proxyGroups.find(g=>g.id===row.group_id)?.name||'未分组' }}</template></el-table-column>
+            <el-table-column label="类型" width="100"><template #default="{ row }">{{ row.proxy_type==='dynamic'?'动态 IP':'静态 IP' }}</template></el-table-column>
+            <el-table-column label="扫码出口" width="110"><template #default="{ row }"><el-tag v-if="row.is_default" type="success">默认出口</el-tag><span v-else>—</span></template></el-table-column>
             <el-table-column label="状态" width="90">
               <template #default="{ row }">
                 <el-tag :type="proxyStatusType(row.status)" size="small">
@@ -111,22 +57,15 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="绑定号码" width="100">
-              <template #default="{ row }">{{ row.bound_number_id ?? '-' }}</template>
-            </el-table-column>
-            <el-table-column prop="used_count" label="使用" width="70" />
-            <el-table-column label="成功率" width="90">
-              <template #default="{ row }">{{ successRate(row) }}</template>
-            </el-table-column>
             <el-table-column label="延迟" width="90">
               <template #default="{ row }">{{ row.latency_ms ? `${row.latency_ms} ms` : '-' }}</template>
             </el-table-column>
-            <el-table-column label="最近检测" width="170">
-              <template #default="{ row }">{{ formatDateTime(row.last_checked_at) }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="130" fixed="right">
+            <el-table-column label="操作" width="270" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" @click="testProxy(row)">测试</el-button>
+                <el-button link :disabled="row.status === 'in_use' || !!row.bound_number_id" @click="editProxy(row)">编辑</el-button>
+                <el-button link @click="openProxyGroup(row)">分组</el-button>
+                <el-button link type="primary" :disabled="row.is_default || row.provider === 'mock' || row.status === 'disabled'" @click="setDefaultProxy(row)">设为默认出口</el-button>
                 <el-button
                   link
                   type="warning"
@@ -157,7 +96,8 @@
       </el-tab-pane>
 
       <!-- ==================== 接码订单 ==================== -->
-      <el-tab-pane label="接码订单" name="sms">
+      <el-tab-pane v-if="!embedded" label="代理分组" name="proxyGroups"><ResourceCollections v-if="activeTab==='proxyGroups'" kind="proxy"/></el-tab-pane>
+      <el-tab-pane v-if="!embedded" label="接码订单" name="sms">
 
 
         <el-card shadow="never">
@@ -239,7 +179,8 @@
 
       <!-- ==================== 采购订单 ==================== -->
       <el-tab-pane label="采购订单" name="purchase">
-        <el-card shadow="never">
+        <el-alert v-if="productProvider==='mock'" type="warning" :closable="false" title="当前为模拟供应商，商品和库存仅用于演示。配置真实账号供应商后才能采购。" class="block-gap"/>
+        <el-card v-if="purchaseMode!=='history'" shadow="never">
           <template #header>
             <div class="card-header">
               <span>商品列表</span>
@@ -256,7 +197,7 @@
             <el-table-column prop="description" label="说明" min-width="180" show-overflow-tooltip />
             <el-table-column label="操作" width="100" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" :disabled="row.stock <= 0" @click="openPurchase(row)">
+                <el-button link type="primary" :disabled="row.stock <= 0 || productProvider==='mock'" @click="openPurchase(row)">
                   采购
                 </el-button>
               </template>
@@ -267,7 +208,7 @@
           </el-table>
         </el-card>
 
-        <el-card shadow="never" class="section-gap">
+        <el-card v-if="purchaseMode!=='catalog'" shadow="never" class="section-gap">
           <template #header>
             <div class="card-header">
               <span>采购订单</span>
@@ -349,8 +290,11 @@
     </el-tabs>
 
     <!-- 导入代理 -->
+    <el-dialog v-model="groupAssignVisible" title="分配代理分组" width="420px"><el-select v-model="assignedGroup" clearable placeholder="未分组" style="width:100%"><el-option v-for="group in proxyGroups" :key="group.id" :label="group.name" :value="group.id"/></el-select><template #footer><el-button @click="groupAssignVisible=false">取消</el-button><el-button type="primary" @click="saveProxyGroup">保存</el-button></template></el-dialog>
     <el-dialog v-model="importVisible" title="导入代理" width="560px">
       <el-form label-width="80px">
+        <el-form-item label="类型"><el-radio-group v-model="importProxyType"><el-radio value="static">静态 IP</el-radio><el-radio value="dynamic">动态 IP</el-radio></el-radio-group></el-form-item>
+        <el-form-item label="分组"><el-select v-model="importProxyGroup" clearable placeholder="未分组"><el-option v-for="group in proxyGroups" :key="group.id" :label="group.name" :value="group.id"/></el-select></el-form-item>
         <el-form-item label="国家">
           <el-input v-model="importForm.country" placeholder="选填，如 ID" />
         </el-form-item>
@@ -404,10 +348,13 @@
         <el-button type="primary" :loading="purchasing" @click="submitPurchase">下单</el-button>
       </template>
     </el-dialog>
-  </div>
+  </PageTemplate>
 </template>
 
 <script setup lang="ts">
+import PageTemplate from '@/components/PageTemplate.vue'
+import ResourceCollections from '@/components/ResourceCollections.vue'
+import { workspaceApi, type ResourceCollection } from '@/api/workspace'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search, Plus, Upload } from '@element-plus/icons-vue'
@@ -427,7 +374,8 @@ import {
   formatDateTime,
 } from '@/utils/format'
 
-const activeTab = ref('providers')
+const props=withDefaults(defineProps<{ initialTab?: string; embedded?: boolean; purchaseMode?: 'catalog'|'history' }>(),{initialTab:'proxies',embedded:false})
+const activeTab = ref(props.initialTab)
 const loading = ref(false)
 const syncing = ref(false)
 
@@ -449,7 +397,11 @@ const proxyRows = ref<ProxyRow[]>([])
 const proxyTotal = ref(0)
 const proxyPage = ref(1)
 const proxySize = ref(20)
-const proxyFilters = reactive({ status: '', country: '' })
+const proxyFilters = reactive({ status: '', country: '', proxy_type: '', group_id: undefined as number|undefined })
+const proxyGroups=ref<ResourceCollection[]>([]),importProxyType=ref('static'),importProxyGroup=ref<number>(),groupAssignVisible=ref(false),assignedGroup=ref<number>(),assignedProxy=ref(0)
+async function loadProxyGroups(){proxyGroups.value=await workspaceApi.groups('proxy')}
+function openProxyGroup(row:ProxyRow){assignedProxy.value=row.id;assignedGroup.value=row.group_id||undefined;groupAssignVisible.value=true}
+async function saveProxyGroup(){await workspaceApi.assignGroup('proxy',[assignedProxy.value],assignedGroup.value||null);groupAssignVisible.value=false;await loadProxies()}
 const importVisible = ref(false)
 const importing = ref(false)
 const importForm = reactive({ text: '', country: '' })
@@ -472,6 +424,8 @@ async function loadProxies() {
       size: proxySize.value,
       status: proxyFilters.status || undefined,
       country: proxyFilters.country || undefined,
+      proxy_type: proxyFilters.proxy_type || undefined,
+      group_id: proxyFilters.group_id,
     })
     proxyRows.value = res.list
     proxyTotal.value = res.total
@@ -493,6 +447,8 @@ function onProxySizeChange() {
 }
 
 function resetProxyFilters() {
+  proxyFilters.proxy_type = ''
+  proxyFilters.group_id = undefined
   proxyFilters.status = ''
   proxyFilters.country = ''
   reloadProxies()
@@ -522,6 +478,8 @@ async function submitImport() {
     const res = await integrationApi.importProxies({
       text: importForm.text,
       country: importForm.country,
+      proxy_type: importProxyType.value,
+      group_id: importProxyGroup.value,
     })
     ElMessage.success(`导入完成：新增 ${res.added} 条，跳过 ${res.skipped} 条`)
     importVisible.value = false
@@ -543,6 +501,27 @@ async function testProxy(row: ProxyRow) {
   } catch {
     /* 拦截器已提示 */
   }
+}
+
+async function setDefaultProxy(row: ProxyRow) {
+  try {
+    await integrationApi.defaultProxy(row.id)
+    ElMessage.success('已设为默认出口，停止会话并重新连接后生效')
+    await loadProxies()
+  } catch { /* 拦截器已提示 */ }
+}
+
+async function editProxy(row: ProxyRow) {
+  let value: string
+  try {
+    const result = await ElMessageBox.prompt('填写完整代理地址，原认证信息不会回显。保存后重新连接会话生效。', '编辑代理', { inputType: 'password', inputPlaceholder: 'http://用户名:密码@服务器:端口', confirmButtonText: '保存', cancelButtonText: '取消' })
+    value = result.value
+  } catch { return }
+  try {
+    await integrationApi.editProxy(row.id, value)
+    ElMessage.success('代理已保存')
+    await loadProxies()
+  } catch { /* 拦截器已提示 */ }
 }
 
 async function releaseProxy(row: ProxyRow) {
@@ -800,6 +779,7 @@ async function removePurchase(row: PurchaseOrderRow) {
 
 // ---------- 加载调度 ----------
 function loadCurrent() {
+  if (activeTab.value === 'proxyGroups') return loadProxyGroups()
   if (activeTab.value === 'providers') return loadStatus()
   if (activeTab.value === 'proxies') return loadProxies()
   if (activeTab.value === 'sms') return loadSms()
@@ -819,13 +799,15 @@ watch(activeTab, (tab) => {
 async function loadAll() {
   loading.value = true
   try {
-    await loadStatus()
+    await loadCurrent()
   } finally {
     loading.value = false
   }
 }
 
 onMounted(loadAll)
+onMounted(()=>{if(!props.embedded)loadProxyGroups()})
+watch(activeTab,()=>{if(!props.embedded)loadProxyGroups()})
 </script>
 
 <style scoped>

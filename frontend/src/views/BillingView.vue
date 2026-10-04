@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <PageTemplate kind="dashboard">
     <div class="page-header">
       <div>
         <h2>余额与计费</h2>
@@ -232,16 +232,17 @@
             创建充值订单
           </el-button>
           <span class="muted unit">
-            充值到账需人工确认（模拟到账接口，链上回调接入前使用）
+            充值到账可由已配置的核验服务回调，或由管理员人工审核确认
           </span>
         </el-form-item>
       </el-form>
 
     </el-drawer>
-  </div>
+  </PageTemplate>
 </template>
 
 <script setup lang="ts">
+import PageTemplate from '@/components/PageTemplate.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search, CopyDocument, CircleCheck } from '@element-plus/icons-vue'
@@ -343,7 +344,7 @@ async function createRecharge() {
 async function confirmOrder(row: RechargeOrder) {
   try {
     await ElMessageBox.confirm(
-      `确认订单 ${row.order_no} 已收到 ${row.amount} ${row.currency}？这是模拟到账接口（链上回调接入前使用），确认后余额立即增加。`,
+      `确认订单 ${row.order_no} 已收到 ${row.amount} ${row.currency}？请先核实实际收款，确认后余额立即增加。`,
       '确认到账',
       { type: 'warning' },
     )

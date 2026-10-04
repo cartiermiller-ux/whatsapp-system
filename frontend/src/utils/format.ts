@@ -27,10 +27,10 @@ export function parseIdList(text: string): number[] {
 
 /** 号码 / 状态等的展示文案映射 */
 export const NUMBER_STATUS_LABEL: Record<string, string> = {
-  pending: '待注册',
-  registering: '注册中',
-  success: '成功',
-  failed: '失败',
+  pending: '待接入',
+  registering: '接入中',
+  success: '已接入',
+  failed: '接入失败',
   banned: '已封',
 }
 
@@ -50,6 +50,7 @@ export const ACCOUNT_STATUS_LABEL: Record<string, string> = {
 export const NURTURE_STAGE_LABEL: Record<string, string> = {
   none: '未开始',
   nurturing: '养号中',
+  stable: '稳定阶段',
   ready: '已就绪',
   done: '已完成',
 }

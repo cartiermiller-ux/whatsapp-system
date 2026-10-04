@@ -15,6 +15,7 @@ export interface PageResult<T> {
 
 /** POST /api/v1/numbers/import 的入参单项 */
 export interface NumberImportItem {
+  region?: string
   phone: string
   source_type: string
   source_channel?: string
@@ -28,6 +29,8 @@ export interface NumberImportResult {
 
 /** GET /api/v1/numbers 列表项 */
 export interface NumberRow {
+  access_status: string
+  linked: boolean
   id: number
   phone_number: string
   source_type: string
@@ -43,6 +46,7 @@ export interface NumberRow {
 
 /** GET /api/v1/numbers 查询参数 */
 export interface NumberQuery {
+  access_status?: string
   page?: number
   size?: number
   status?: string
@@ -59,6 +63,7 @@ export interface RegisterStatusDetail {
 
 /** GET /api/v1/register/status 返回 data */
 export interface RegisterStatusResult {
+  mode?: string
   total: number
   success: number
   failed: number
@@ -68,6 +73,21 @@ export interface RegisterStatusResult {
 
 /** GET /api/v1/accounts 列表项 */
 export interface AccountItem {
+  group_id?: number | null
+  account_type?: string
+  device_type?: string
+  notes?: string
+  phone_number?: string
+  nurture_days?: number | null
+  account_age_days?: number | null
+  network_country?: string
+  network_state?: string
+  latency_ms?: number | null
+  connection_state?: string
+  abnormal?: boolean
+  activity_success_rate?: number | null
+  full_params_ready: boolean
+  session_name: string
   id: number
   number_id: number
   health_score: number
@@ -78,6 +98,7 @@ export interface AccountItem {
 
 /** GET /api/v1/accounts/{id} 详情 */
 export interface AccountDetail {
+  full_params_ready?: boolean
   id: number
   number_id: number
   phone_number: string | null
@@ -98,6 +119,9 @@ export interface MassSendCreateReq {
   account_ids: number[]
   message_content: string
   link_url?: string
+  scheduled_at?: string
+  billing_country?: string
+  ad_message_id?: number
 }
 
 /** POST /api/v1/mass-send/tasks 返回 data */
@@ -108,6 +132,15 @@ export interface MassSendCreateResult {
 
 /** GET /api/v1/mass-send/tasks/{id} 返回 data */
 export interface MassSendProgress {
+  targets: number
+  accepted: number
+  failed: number
+  progress: number
+  last_error: string
+  mode: string
+  account_ids: number[]
+  message_content: string
+  scheduled_at: string | null
   task_id: number
   status: string
   target_type: string
@@ -130,6 +163,8 @@ export interface MassSendTaskRow {
 
 /** 看板指标口径 */
 export interface DashboardMetrics {
+  mock_tasks?: number
+  legacy_tasks?: number
   tasks: number
   sent: number
   delivered: number
@@ -148,12 +183,13 @@ export interface DashboardTaskBrief {
   task_name: string
   status: string
   target_type: string
+  kind?: 'mass-send' | 'pull-group'
   targets: number
-  sent: number
-  delivered: number
-  read: number
-  failed: number
-  progress: number
+  sent: number | null
+  delivered: number | null
+  read?: number
+  failed?: number
+  progress: number | null
   created_at: string | null
 }
 
@@ -164,6 +200,8 @@ export interface DashboardOverview {
   total: DashboardMetrics
   balance: { balance: number; currency: string; pending_orders: number }
   accounts: { total: number; normal: number; watch: number; paused: number; banned: number }
+  task_counts: { running: number; pending: number; done: number; failed: number }
+  resources: { available_numbers: number; groups: number }
   active_tasks: DashboardTaskBrief[]
   recent_tasks: DashboardTaskBrief[]
   providers: ProviderItem[]
@@ -177,6 +215,8 @@ export interface RegisterBatchResult {
 
 /** GET /api/v1/groups 列表项 */
 export interface GroupRow {
+  owner_account_id?: number | null
+  source_channel?: string
   id: number
   group_name: string
   group_jid: string
@@ -197,6 +237,7 @@ export interface InviteTaskCreateReq {
   source_ids: number[]
   account_ids: number[]
   billing_country: string
+  scheduled_at?: string
 }
 
 export interface InviteTaskCreateResult {
@@ -456,6 +497,8 @@ export interface AdminUserUpdateReq {
 
 /** GET /api/v1/numbers/export 行 */
 export interface NumberExportRow {
+  access_status: string
+  linked: boolean
   id: number
   phone: string
   source_type: string
@@ -473,6 +516,7 @@ export interface RegisterAnalysis {
   details: {
     id: number
     phone: string
+    reason: string
     source_type: string
     source_channel: string | null
   }[]
@@ -480,6 +524,16 @@ export interface RegisterAnalysis {
 
 /** GET /api/v1/invite/tasks/{id} 返回 data */
 export interface InviteTaskDetail {
+  targets?: number
+  processed?: number
+  succeeded?: number
+  failed?: number
+  progress?: number
+  last_error?: string
+  mode?: string
+  account_ids?: number[]
+  source_ids?: number[]
+  scheduled_at?: string | null
   task_id: number
   task_name: string
   target_group_id: number
@@ -514,6 +568,9 @@ export interface ProvidersStatus {
 
 /** GET /api/v1/proxies 列表项 */
 export interface ProxyRow {
+  group_id?: number | null
+  proxy_type?: string
+  is_default: boolean
   id: number
   host: string
   port: number
@@ -623,6 +680,7 @@ export interface WhatsAppRegisterResult {
 
 /** GET /api/v1/whatsapp/sessions 列表项 */
 export interface WhatsAppSessionItem {
+  status: string
   auth_name: string
   paired_phone: string
   paired: boolean
@@ -638,3 +696,24 @@ export interface WhatsAppSessionsResult {
   active: string
   next: string
 }
+
+export interface TaskExecutionRow {
+  id: number; target_id: string; target: string; account_id: number
+  status: string; attempts: number; error: string; message_id: string
+  delivered_at: string | null; read_at: string | null; charged: boolean
+}
+export interface TaskLogRow {
+  id: number; account_id: number; target: string; action: string
+  result: string; detail: string; created_at: string | null
+}
+export interface ServiceConfigField {
+  key: string; label: string; secret: boolean; configured: boolean
+  value: string; options: string[]; type: string
+}
+export interface ServiceHealth {
+  checked_at: string | null
+  items: { kind: string; name: string; state: string; detail: string }[]
+}
+
+export interface ResourcePlatformOverview { platform: string; available_numbers: number; connected_accounts: number; groups: number }
+export interface AccessTaskRow { id: number; phone: string; source_channel: string; region: string; status: string; account_id: number | null; linked: boolean; reason: string; accessed_at: string | null }

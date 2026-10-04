@@ -1,247 +1,30 @@
 <template>
-  <div class="page">
-    <div class="page-header">
-      <div>
-        <h2>注册管理</h2>
-        <div class="sub">批量注册 · 实时进度 · 成功率统计</div>
-      </div>
-      <div class="actions">
-        <el-button :icon="Refresh" :loading="loading" @click="loadStatus">刷新状态</el-button>
-        <el-button type="primary" :icon="Plus" @click="createVisible = true">批量注册</el-button>
-      </div>
-    </div>
-
-        <el-card shadow="never">
-          <template #header>
-            <div class="card-header">
-              <span>注册进度</span>
-              <div class="auto-refresh">
-                <span class="muted">实时刷新</span>
-                <el-switch v-model="autoRefresh" @change="onAutoRefreshChange" />
-              </div>
-            </div>
-          </template>
-
-          <div class="stat-grid">
-            <div class="stat-card">
-              <div class="label">总数</div>
-              <div class="value">{{ status.total }}</div>
-            </div>
-            <div class="stat-card">
-              <div class="label">注册成功</div>
-              <div class="value" style="color:#303030">{{ status.success }}</div>
-            </div>
-            <div class="stat-card">
-              <div class="label">注册失败</div>
-              <div class="value" style="color:#b42318">{{ status.failed }}</div>
-            </div>
-            <div class="stat-card">
-              <div class="label">待注册</div>
-              <div class="value" style="color:#a16207">{{ status.pending }}</div>
-            </div>
-          </div>
-
-          <div class="rate section-gap">
-            <span>注册成功率</span>
-            <el-progress
-              :percentage="successRate"
-              :show-text="false"
-              :stroke-width="14"
-              :color="successRate >= 70 ? '#303030' : '#a16207'"
-              style="flex: 1"
-            />
-            <b>{{ successRate }}%</b>
-          </div>
-
-          <el-table
-            v-loading="loading"
-            :data="status.details"
-            size="small"
-            max-height="320"
-            class="section-gap"
-          >
-            <el-table-column prop="id" label="ID" width="80" />
-            <el-table-column prop="phone" label="号码" min-width="140" />
-            <el-table-column label="状态" width="110">
-              <template #default="{ row }">
-                <el-tag :type="statusTagType(row.status)" size="small">
-                  {{ NUMBER_STATUS_LABEL[row.status] || row.status }}
-                </el-tag>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-card>
-
-    <el-drawer v-model="createVisible" title="批量注册" size="480px">
-          <el-form label-position="top">
-            <el-form-item label="号码 ID 列表">
-              <el-input
-                v-model="registerText"
-                type="textarea"
-                :rows="5"
-                placeholder="输入号码池中的号码 ID，逗号或换行分隔，例如：1,2,3"
-              />
-            </el-form-item>
-            <el-form-item>
-              <el-button size="small" @click="pickPending">选择全部待注册号码</el-button>
-              <span class="muted"> 已选 {{ registerIds.length }} 个</span>
-            </el-form-item>
-            <el-button
-              type="primary"
-              :loading="submitting"
-              :disabled="registerIds.length === 0"
-              @click="submitRegister"
-            >
-              提交注册任务
-            </el-button>
-          </el-form>
-      <p class="field-hint">任务提交后在后台执行，可在注册进度中查看结果。</p>
-    </el-drawer>
-
-    <el-card shadow="never" class="section-gap">
-      <template #header>
-        <div class="card-header">
-          <span>注册失败记录</span>
-          <span class="muted">共 {{ analysis.total }} 个失败号码</span>
-        </div>
-      </template>
-      <el-table v-loading="loading" :data="analysis.details" size="small" max-height="320">
-        <el-table-column prop="id" label="号码 ID" width="90" />
-        <el-table-column prop="phone" label="号码" min-width="150" />
-        <el-table-column label="来源" width="120">
-          <template #default="{ row }">
-            {{ NUMBER_SOURCE_LABEL[row.source_type] || row.source_type }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="source_channel" label="来源渠道" min-width="120" />
-        <template #empty>
-          <el-empty description="暂无注册失败号码，说明这一轮注册没有失败记录" />
-        </template>
-      </el-table>
-      <el-alert
-        class="section-gap"
-        type="info"
-        :closable="false"
-        show-icon
-        title="当前显示失败号码清单，详细失败原因暂不可用。"
-      />
-    </el-card>
-  </div>
+  <PageTemplate kind="list">
+    <div class="page-header"><div><h2>账号接入</h2><div class="sub">第三方号码或成号 → 扫码绑定到系统 → 形成可运营 WhatsApp 账号</div></div><div class="actions"><el-button :loading="loading" @click="load">刷新</el-button><el-button @click="$router.push('/integrations')">获取第三方资源</el-button><el-button type="primary" @click="loginVisible = true">扫码接入账号</el-button></div></div>
+    <p class="access-hint">已有号码需要先在 WhatsApp 完成账号开通，再扫码关联到系统。已有成号可直接扫码接入；只有有效会话绑定成功才显示“已接入”。</p>
+    <div class="filter-bar"><el-input v-model="keyword" placeholder="搜索号码 / 来源平台" clearable style="width:240px" @keyup.enter="reload" /><el-select v-model="status" placeholder="接入状态" clearable style="width:140px"><el-option v-for="(label, key) in labels" :key="key" :value="key" :label="label" /></el-select><el-button @click="reload">查询</el-button><el-button @click="reset">重置</el-button></div>
+    <el-alert v-if="error" type="error" title="接入记录加载失败，请刷新重试" :closable="false" />
+    <el-table :data="rows" v-loading="loading"><el-table-column label="接入记录" width="120"><template #default="{ row }">IN-{{ String(row.id).padStart(3, '0') }}</template></el-table-column><el-table-column prop="source_channel" label="来源平台" min-width="140" /><el-table-column prop="phone" label="号码" min-width="170" /><el-table-column label="地区" width="100"><template #default="{ row }">{{ row.region || '未记录' }}</template></el-table-column><el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="statusTagType(row.status)" size="small">{{ labels[row.status] || row.status }}</el-tag></template></el-table-column><el-table-column label="关联账号" min-width="120"><template #default="{ row }"><router-link v-if="row.account_id" to="/accounts">WA-{{ String(row.account_id).padStart(3, '0') }}</router-link><span v-else>—</span></template></el-table-column><el-table-column prop="reason" label="接入说明" min-width="230" /><el-table-column label="操作" width="110"><template #default="{ row }"><el-button v-if="!row.linked" link type="primary" @click="loginVisible = true">扫码接入</el-button><el-button v-else link @click="$router.push('/accounts')">查看账号</el-button></template></el-table-column><template #empty><el-empty description="暂无接入记录，请先获取或导入号码资源" /></template></el-table>
+    <div class="pager"><el-pagination v-model:current-page="page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="load" /></div>
+    <WhatsAppLoginDialog v-model="loginVisible" @registered="afterLinked" />
+  </PageTemplate>
 </template>
-
 <script setup lang="ts">
-import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Plus, Refresh } from '@element-plus/icons-vue'
-import { registerApi } from '@/api'
-import type { RegisterAnalysis, RegisterStatusResult } from '@/types/api'
-import {
-  NUMBER_SOURCE_LABEL,
-  NUMBER_STATUS_LABEL,
-  parseIdList,
-  statusTagType,
-} from '@/utils/format'
-
-const createVisible = ref(false)
-const loading = ref(false)
-const submitting = ref(false)
-const autoRefresh = ref(false)
-const registerText = ref('')
-let timer: number | null = null
-
-const status = ref<RegisterStatusResult>({
-  total: 0,
-  success: 0,
-  failed: 0,
-  pending: 0,
-  details: [],
-})
-
-const analysis = ref<RegisterAnalysis>({ total: 0, details: [] })
-
-const registerIds = computed(() => parseIdList(registerText.value))
-const successRate = computed(() => {
-  const done = status.value.success + status.value.failed
-  if (!done) return 0
-  return Math.round((status.value.success / done) * 100)
-})
-
-function pickPending() {
-  const pendingIds = status.value.details.filter((d) => d.status === 'pending').map((d) => d.id)
-  if (!pendingIds.length) {
-    ElMessage.info('没有待注册的号码')
-    return
-  }
-  registerText.value = pendingIds.join(',')
-}
-
-async function loadStatus() {
-  loading.value = true
-  try {
-    const [s, a] = await Promise.all([registerApi.status(), registerApi.analysis()])
-    status.value = s
-    analysis.value = a
-  } finally {
-    loading.value = false
-  }
-}
-
-async function submitRegister() {
-  submitting.value = true
-  try {
-    const res = await registerApi.batch(registerIds.value)
-    createVisible.value = false
-    ElMessage.success(res.message || `已提交 ${res.count} 个注册任务`)
-    registerText.value = ''
-    // 稍等后刷新，让「注册中」状态可见
-    setTimeout(loadStatus, 500)
-  } finally {
-    submitting.value = false
-  }
-}
-
-function onAutoRefreshChange(val: boolean) {
-  if (val) {
-    timer = window.setInterval(loadStatus, 2000)
-  } else if (timer) {
-    clearInterval(timer)
-    timer = null
-  }
-}
-
-function stopTimer() {
-  if (timer) {
-    clearInterval(timer)
-    timer = null
-  }
-}
-
-// keep-alive 场景下，离开页面暂停轮询，回来时若仍开启则恢复
-onActivated(() => {
-  loadStatus()
-  if (autoRefresh.value && !timer) {
-    timer = window.setInterval(loadStatus, 2000)
-  }
-})
-
-onDeactivated(stopTimer)
-
-onMounted(loadStatus)
-
-onBeforeUnmount(stopTimer)
+import { onActivated, ref } from 'vue'
+import { resourceApi } from '@/api'
+import type { AccessTaskRow } from '@/types/api'
+import { statusTagType } from '@/utils/format'
+import PageTemplate from '@/components/PageTemplate.vue'
+import WhatsAppLoginDialog from '@/components/WhatsAppLoginDialog.vue'
+const emit = defineEmits<{ changed: [] }>()
+const labels: Record<string,string> = { pending: '待接入', registering: '接入中', success: '已接入', failed: '接入失败' }
+const loading = ref(false), error = ref(false), loginVisible = ref(false), keyword = ref(''), status = ref(''), page = ref(1), total = ref(0), rows = ref<AccessTaskRow[]>([])
+async function load() { loading.value = true; try { const result = await resourceApi.accessTasks({ page: page.value, size: 20, keyword: keyword.value, status: status.value }); rows.value = result.list; total.value = result.total; error.value = false } catch { error.value = true } finally { loading.value = false } }
+function reload() { page.value = 1; load() }
+function reset() { keyword.value = ''; status.value = ''; reload() }
+async function afterLinked() { await load(); emit('changed') }
+onActivated(load)
 </script>
-
 <style scoped>
-.auto-refresh {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-}
-
-.rate {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+.access-hint { color: var(--wa-text-muted); font-size: 12px; line-height: 1.7; margin: 0 0 20px; }
 </style>

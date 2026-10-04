@@ -127,6 +127,9 @@ service.interceptors.response.use(
       return Promise.reject(error)
     }
 
+    if (error?.response?.data instanceof Blob && error.response.data.type.includes('json')) {
+      try { error.response.data = JSON.parse(await error.response.data.text()) } catch { /* 保留原始错误 */ }
+    }
     toastOnce(friendlyMessage(error))
     return Promise.reject(error)
   },

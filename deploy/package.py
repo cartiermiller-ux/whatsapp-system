@@ -24,6 +24,14 @@ OUT_DIR = PROJECT_DIR / "dist-deploy"
 # 要打进包里的文件/目录（相对项目根）
 INCLUDE_FILES = [
     "main.py",
+    "operations.py",
+    "service_config.py",
+    "service_api.py",
+    "resource_api.py",
+    "finance_api.py",
+    "account_export_api.py",
+    "account_management_api.py",
+    "workspace_api.py",
     "whatsapp_session.py",
     "connect_whatsapp.py",
     "requirements.txt",

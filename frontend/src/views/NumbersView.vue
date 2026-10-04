@@ -1,9 +1,9 @@
 <template>
-  <div class="page">
+  <PageTemplate kind="list">
     <div class="page-header">
       <div>
-        <h2>号码池管理</h2>
-        <div class="sub">批量导入 · 号码状态 · 来源类型</div>
+        <h2>号码资源</h2>
+        <div class="sub">管理第三方号码的来源、地区与接入状态</div>
       </div>
       <div class="actions">
         <el-button type="primary" :icon="Upload" @click="importVisible = true">批量导入号码</el-button>
@@ -13,7 +13,7 @@
     </div>
 
 
-    <el-card shadow="never">
+    <section>
       <div class="filter-bar">
         <el-input
           v-model="filters.keyword"
@@ -23,7 +23,7 @@
           clearable
           @keyup.enter="reload"
         />
-        <el-select v-model="filters.status" placeholder="号码状态" style="width: 140px" clearable>
+        <el-select v-model="filters.status" placeholder="资源状态" style="width: 140px" clearable>
           <el-option
             v-for="(label, key) in NUMBER_STATUS_LABEL"
             :key="key"
@@ -53,30 +53,12 @@
       </div>
       <el-table v-loading="loading" :data="rows" stripe @selection-change="onSelectionChange">
         <el-table-column type="selection" width="46" />
-        <el-table-column prop="id" label="ID" width="70" />
-        <el-table-column prop="phone_number" label="号码" min-width="150" />
-        <el-table-column label="来源" width="110">
-          <template #default="{ row }">
-            <el-tag size="small" effect="plain">
-              {{ NUMBER_SOURCE_LABEL[row.source_type] || row.source_type }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="source_channel" label="来源渠道" min-width="110" />
-        <el-table-column prop="number_segment" label="号段" width="100" />
-        <el-table-column prop="region" label="地区" width="80" />
-        <el-table-column prop="trust_score" label="信任分" width="90" />
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="statusTagType(row.status)" size="small">
-              {{ NUMBER_STATUS_LABEL[row.status] || row.status }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="account_id" label="账号 ID" width="90" />
-        <el-table-column label="注册时间" width="170">
-          <template #default="{ row }">{{ formatDateTime(row.register_time) }}</template>
-        </el-table-column>
+        <el-table-column label="来源平台" min-width="150"><template #default="{ row }">{{ row.source_channel || '未标注来源' }}<small class="resource-source-type">{{ NUMBER_SOURCE_LABEL[row.source_type] || row.source_type }}</small></template></el-table-column>
+        <el-table-column prop="phone_number" label="号码" min-width="170" />
+        <el-table-column label="地区" width="110"><template #default="{ row }">{{ row.region || '未记录' }}</template></el-table-column>
+        <el-table-column label="资源状态" width="120"><template #default="{ row }"><el-tag :type="statusTagType(row.access_status)" size="small">{{ NUMBER_STATUS_LABEL[row.access_status] || row.access_status }}</el-tag></template></el-table-column>
+        <el-table-column label="是否已转账号" min-width="160"><template #default="{ row }"><router-link v-if="row.linked" to="/accounts">已转账号 · WA-{{ String(row.account_id).padStart(3, '0') }}</router-link><span v-else class="muted">尚未接入</span></template></el-table-column>
+        <el-table-column label="接入时间" width="170"><template #default="{ row }">{{ row.linked ? formatDateTime(row.register_time) : '—' }}</template></el-table-column>
         <template #empty>
           <el-empty description="暂无号码，点击右上角「批量导入号码」" />
         </template>
@@ -94,7 +76,7 @@
           @size-change="onSizeChange"
         />
       </div>
-    </el-card>
+    </section>
 
     <!-- 批量导入 -->
     <el-dialog v-model="importVisible" title="批量导入号码" width="640px" @closed="resetImport">
@@ -106,9 +88,10 @@
             <el-radio-button value="sms_platform">接码平台</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="来源渠道">
+        <el-form-item label="来源平台">
           <el-input v-model="importForm.source_channel" placeholder="如 卡商A / 平台B（可选）" />
         </el-form-item>
+        <el-form-item label="地区"><el-input v-model="importForm.region" placeholder="如 US / CN（可选，未知则留空）" /></el-form-item>
         <el-form-item label="号码列表">
           <el-input
             v-model="importForm.text"
@@ -148,11 +131,12 @@
         </el-button>
       </template>
     </el-dialog>
-  </div>
+  </PageTemplate>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import PageTemplate from '@/components/PageTemplate.vue'
+import { computed, onActivated, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type UploadFile } from 'element-plus'
 import { Upload, Download, Delete, Search, Document } from '@element-plus/icons-vue'
 import { numberApi } from '@/api'
@@ -165,6 +149,7 @@ import {
   statusTagType,
 } from '@/utils/format'
 
+const emit = defineEmits<{ changed: [] }>()
 const loading = ref(false)
 const rows = ref<NumberRow[]>([])
 const total = ref(0)
@@ -192,14 +177,14 @@ async function batchDelete() {
   const res = await numberApi.remove(selectedIds.value)
   ElMessage.success(`已删除 ${res.count} 个号码`)
   selectedIds.value = []
-  await load()
+  await load(); emit('changed')
 }
 
 async function exportNumbers() {
   exporting.value = true
   try {
     const list = await numberApi.export()
-    const header = ['ID', '号码', '来源', '来源渠道', '号段', '地区', '信任分', '状态', '创建时间']
+    const header = ['ID', '号码', '来源', '来源平台', '号段', '地区', '信任分', '状态', '创建时间']
     const lines = [header.join(',')]
     for (const r of list) {
       lines.push(
@@ -211,7 +196,7 @@ async function exportNumbers() {
           r.number_segment ?? '',
           r.region ?? '',
           r.trust_score,
-          NUMBER_STATUS_LABEL[r.status] || r.status,
+          NUMBER_STATUS_LABEL[r.access_status] || r.access_status,
           r.created_at ?? '',
         ]
           .map((v) => `"${String(v).replace(/"/g, '""')}"`)
@@ -238,7 +223,7 @@ async function load() {
       page: page.value,
       size: size.value,
       keyword: filters.keyword || undefined,
-      status: filters.status || undefined,
+      access_status: filters.status || undefined,
       source_type: filters.source_type || undefined,
     })
     rows.value = res.list
@@ -270,7 +255,7 @@ function resetFilters() {
 // ---------- 导入 ----------
 const importVisible = ref(false)
 const importing = ref(false)
-const importForm = reactive({ source_type: 'physical', source_channel: '', text: '' })
+const importForm = reactive({ source_type: 'physical', source_channel: '', region: '', text: '' })
 
 const parsedPhones = computed(() => parsePhoneList(importForm.text))
 const uniquePhones = computed(() => Array.from(new Set(parsedPhones.value)))
@@ -279,6 +264,7 @@ const duplicated = computed(() => uniquePhones.value.length !== parsedPhones.val
 function resetImport() {
   importForm.text = ''
   importForm.source_channel = ''
+  importForm.region = ''
   importForm.source_type = 'physical'
 }
 
@@ -300,19 +286,20 @@ async function submitImport() {
     phone,
     source_type: importForm.source_type,
     source_channel: importForm.source_channel,
+    region: importForm.region,
   }))
   importing.value = true
   try {
     const res = await numberApi.import(items)
     ElMessage.success(`导入完成：成功 ${res.imported} 个，失败 ${res.failed} 个（重复号码记为失败）`)
     importVisible.value = false
-    reload()
+    reload(); emit('changed')
   } finally {
     importing.value = false
   }
 }
 
-onMounted(load)
+onActivated(() => { load(); emit('changed') })
 </script>
 
 <style scoped>
@@ -324,4 +311,8 @@ onMounted(load)
   font-size: 13px;
   color: #737373;
 }
+</style>
+
+<style scoped>
+.resource-source-type { display: block; color: var(--wa-text-muted); font-size: 11px; }
 </style>

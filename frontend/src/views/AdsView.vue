@@ -1,8 +1,8 @@
 <template>
-  <div class="page">
+  <PageTemplate kind="list">
     <div class="page-header">
       <div>
-        <h2>广告消息管理</h2>
+        <h2>广告消息</h2>
         <div class="sub">多语言文案 · 超链管理 · 效果统计</div>
       </div>
       <div class="actions">
@@ -377,10 +377,11 @@
         <el-button type="primary" :loading="linkSubmitting" @click="submitLink">保存</el-button>
       </template>
     </el-dialog>
-  </div>
+  </PageTemplate>
 </template>
 
 <script setup lang="ts">
+import PageTemplate from '@/components/PageTemplate.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick, Plus, Search, Edit, Delete, CopyDocument, Refresh } from '@element-plus/icons-vue'

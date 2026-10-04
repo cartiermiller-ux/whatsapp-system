@@ -16,19 +16,21 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-DB_FILE = os.path.join("tests", ".tmp", "real_send_test.db")
+DB_FILE = os.path.abspath(os.path.join(os.environ.get("WHATSAPP_TEST_TMP_DIR", os.path.join("tests", ".tmp")), "real_send_test.db"))
 os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
 if os.path.exists(DB_FILE):
     os.remove(DB_FILE)
-os.environ["WHATSAPP_DATABASE_URL"] = "sqlite:///./" + DB_FILE
+os.environ["WHATSAPP_DATABASE_URL"] = "sqlite:///" + DB_FILE
 sys.path.insert(0, os.getcwd())
 
 import main  # noqa: E402
+import operations
 from main import (AccountPool, MassSendTask, NumberPool, ResourceGroup,  # noqa: E402
                   SessionLocal, TaskLog)
 
 ORIGINAL_INTERVAL = main.send_interval_seconds
 ORIGINAL_IS_LOGGED_IN = main.is_wasock_logged_in
+ORIGINAL_ACTIVATE = operations.activate_account
 PASSED, FAILED = [], []
 
 
@@ -136,6 +138,8 @@ def use_server(server, logged_in=True):
     main.WASOCK_HOST = "127.0.0.1"
     main.WASOCK_PORT = server.port
     main.USE_REAL_SEND = True
+    os.environ["USE_REAL_SEND"] = "true"
+    operations.activate_account = lambda account, db: None if logged_in else (_ for _ in ()).throw(ValueError("未登录"))
     main.is_wasock_logged_in = lambda *a, **k: logged_in
     main.send_interval_seconds = lambda db: 0.0
     main.SEND_RETRY_WAIT = 0.0
@@ -143,6 +147,8 @@ def use_server(server, logged_in=True):
 
 def restore():
     main.USE_REAL_SEND = False
+    os.environ["USE_REAL_SEND"] = "false"
+    operations.activate_account = ORIGINAL_ACTIVATE
     main.WASOCK_HOST = "127.0.0.1"
     main.WASOCK_PORT = 5000
     main.send_interval_seconds = ORIGINAL_INTERVAL
@@ -268,10 +274,10 @@ msgs = server.sent()[before:]
 check("群模式发到群 JID", [m["chat"] for m in msgs] == ["120363000000000001@g.us"], [m["chat"] for m in msgs])
 check("发出去的是渲染后的文案",
       msgs[0]["msg"].startswith("你好 巴西促销群") and msgs[0]["msg"].endswith("https://promo.example.com"), msgs[0])
-check("计数 sent=1（不可解析的目标不算已发送）", task.sent == 1, task.sent)
-check("计数 delivered=1", task.delivered == 1, task.delivered)
-check("任务状态 done", task.status == "done", task.status)
-logs = db.query(TaskLog).filter_by(task_id=task.id).all()
+check("所有目标进入处理进度，包含失败目标", task.sent == 2 and task.failed == 1, (task.sent, task.failed))
+check("发送成功与真实送达分开计数", task.accepted == 1 and task.delivered == 0, (task.accepted, task.delivered))
+check("部分目标失败时标记任务异常", task.status == "failed", task.status)
+logs = db.query(TaskLog).filter(TaskLog.task_id == task.id, TaskLog.account_id == account.id).all()
 check("可解析目标记 success、不可解析记 failed",
       sorted(l.result for l in logs) == ["failed", "success"], [l.result for l in logs])
 check("TaskLog 归属执行账号", all(l.account_id == account.id for l in logs), [l.account_id for l in logs])
@@ -295,22 +301,29 @@ before = len(server.sent())
 task2 = make_task(db, [phone_row.id, 8613900000002], "hello", "", account.id, target_type="contact")
 main.dispatch_mass_send(task2.id, db)
 db.refresh(task2)
-check("失败目标不计入 delivered", task2.delivered == 1, task2.delivered)
+check("失败目标不计入 accepted，回执未到不计送达", task2.accepted == 1 and task2.delivered == 0, (task2.accepted, task2.delivered))
 check("可解析目标都计入 sent", task2.sent == 2, task2.sent)
-check("部分成功时任务仍为 done", task2.status == "done", task2.status)
+check("部分失败时任务状态为 failed", task2.status == "failed", task2.status)
 attempts = {m["chat"]: 0 for m in []}
 for m in server.sent()[before:]:
     attempts[m["chat"]] = attempts.get(m["chat"], 0) + 1
-check("失败目标重试 1 次（共 2 次尝试）", attempts.get("8613800000001@s.whatsapp.net") == 2, attempts)
+check("首次执行不隐式重复发送", attempts.get("8613800000001@s.whatsapp.net") == 1, attempts)
 server.fail_chats = set()
 
 server.fail_times = 1
+server.attempts["120363000000000001@g.us"] = 0
 main.SEND_RETRY_TIMES = 1
 task3 = make_task(db, [group.id], "retry me", "", account.id, target_type="group")
 main.dispatch_mass_send(task3.id, db)
 db.refresh(task3)
-check("首次失败后重试成功则计入 delivered", task3.delivered == 1 and task3.status == "done",
-      (task3.delivered, task3.status))
+check("明确失败会记录原因，等待显式重试", task3.failed == 1 and task3.status == "failed", (task3.failed, task3.status))
+server.fail_times = 0
+ops_req = main.BackgroundTasks()
+ops_user = type('User', (), {'username': 'test'})()
+operations.control('mass-send', task3.id, 'retry', ops_req, db, ops_user)
+main.dispatch_mass_send(task3.id, db)
+db.refresh(task3)
+check("显式重试成功，仍等待真实送达回执", task3.accepted == 1 and task3.delivered == 0 and task3.status == 'done', (task3.accepted,task3.delivered,task3.status))
 server.fail_times = 0
 
 server.fail_chats = {"120363000000000001@g.us"}
@@ -367,6 +380,7 @@ main.dispatch_mass_send(task10.id, db)
 check("开关 False -> 走 simulate_mass_send",
       simulated["n"] == 1 and real_called["n"] == 0, (simulated, real_called))
 main.USE_REAL_SEND = True
+os.environ["USE_REAL_SEND"] = "true"
 main.dispatch_mass_send(task10.id, db)
 check("开关 True -> 走 real_mass_send", real_called["n"] == 1, real_called)
 restore()

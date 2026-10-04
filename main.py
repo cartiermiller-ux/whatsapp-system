@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException, Query, Hea
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import (
     create_engine, Column, Integer, String, DateTime, Boolean, DECIMAL, Numeric, Text, func, or_,
-    inspect, text,
+    inspect, text, UniqueConstraint, case,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -25,6 +25,9 @@ SOURCE_TYPE_ALIASES = {
 def normalize_source_type(value: str) -> str:
     key = (value or "").strip()
     return SOURCE_TYPE_ALIASES.get(key, key)
+
+import service_config
+service_config.load()
 
 # ---------- 数据库 ----------
 # 默认库固定放在项目目录下（锚定 main.py），而不是跟着启动时的 cwd 走；
@@ -50,6 +53,8 @@ class NumberPool(Base):
     region = Column(String(50))
     trust_score = Column(Integer, default=50)
     status = Column(String(20), default="pending")
+    proxy_ip = Column(String(255), default="")
+    failure_reason = Column(Text, default="")
     register_time = Column(DateTime, nullable=True)
     account_id = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
@@ -58,11 +63,19 @@ class AccountPool(Base):
     __tablename__ = "account_pool"
     id = Column(Integer, primary_key=True, index=True)
     number_id = Column(Integer, index=True)
+    group_id = Column(Integer, nullable=True, index=True)
+    account_type = Column(String(20), default='personal')
+    device_type = Column(String(20), default='linked')
+    notes = Column(String(500), default='')
     device_fingerprint = Column(String(255))
     current_ip = Column(String(45))
     nurture_stage = Column(String(20), default="none")
     health_score = Column(Integer, default=100)
     status = Column(String(20), default="normal")
+    nurture_started_at = Column(DateTime, nullable=True)
+    session_enabled = Column(Boolean, default=True)
+    full_params_ready = Column(Boolean, default=False)
+    converted_at = Column(DateTime, nullable=True)
     session_name = Column(String(64), default="")   # 该账号用的 WhatsApp 登录态目录
     created_at = Column(DateTime, default=datetime.now)
 
@@ -79,12 +92,27 @@ class MassSendTask(Base):
     sent = Column(Integer, default=0)
     delivered = Column(Integer, default=0)
     read_count = Column(Integer, default=0)
+    accepted = Column(Integer, default=0)
+    failed = Column(Integer, default=0)
+    last_error = Column(Text, default="")
+    mode = Column(String(20), default="")
+    scheduled_at = Column(DateTime, nullable=True)
+    billing_country = Column(String(10), default="")
+    ad_message_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+class WhatsAppLinkSession(Base):
+    __tablename__ = 'whatsapp_link_session'
+    id = Column(Integer, primary_key=True)
+    auth_name = Column(String(255), unique=True, index=True)
+    owner_user_id = Column(Integer, index=True)
     created_at = Column(DateTime, default=datetime.now)
 
 class ResourceGroup(Base):
     __tablename__ = "resource_group"
     id = Column(Integer, primary_key=True, index=True)
     group_name = Column(String(255))
+    source_channel = Column(String(255), default="")
     group_jid = Column(String(255), unique=True)
     group_link = Column(String(500))
     owner_account_id = Column(Integer)
@@ -109,6 +137,12 @@ class InviteTask(Base):
     strategy = Column(Text)
     billing_country = Column(String(50))
     status = Column(String(20), default="pending")
+    processed = Column(Integer, default=0)
+    succeeded = Column(Integer, default=0)
+    failed = Column(Integer, default=0)
+    last_error = Column(Text, default="")
+    mode = Column(String(20), default="")
+    scheduled_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 class TaskLog(Base):
@@ -116,9 +150,41 @@ class TaskLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     task_id = Column(Integer)
     account_id = Column(Integer)
+    task_kind = Column(String(20), default="mass-send", index=True)
+    target = Column(String(255), default="")
+    detail = Column(Text, default="")
     action = Column(String(50))
     result = Column(String(20))
     created_at = Column(DateTime, default=datetime.now)
+
+class TaskExecution(Base):
+    """每个目标一条持久化执行记录；成功目标不因重试再次执行。"""
+    __tablename__ = "task_execution"
+    __table_args__ = (UniqueConstraint("task_kind", "task_id", "target_id"),)
+    id = Column(Integer, primary_key=True)
+    task_kind = Column(String(20), index=True)
+    task_id = Column(Integer, index=True)
+    target_id = Column(String(64))
+    target = Column(String(255), default="")
+    account_id = Column(Integer, default=0)
+    status = Column(String(20), default="pending")
+    attempts = Column(Integer, default=0)
+    error = Column(Text, default="")
+    message_id = Column(String(255), default="", index=True)
+    delivered_at = Column(DateTime, nullable=True)
+    read_at = Column(DateTime, nullable=True)
+    charged = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+class ReceiptEvent(Base):
+    __tablename__ = "receipt_event"
+    __table_args__ = (UniqueConstraint("message_id", "target"),)
+    id = Column(Integer, primary_key=True)
+    message_id = Column(String(255))
+    target = Column(String(255))
+    status = Column(String(20))
+    received_at = Column(DateTime, default=datetime.now)
 
 # ---------- P2 模型：广告消息 ----------
 class AdMessage(Base):
@@ -200,6 +266,7 @@ class User(Base):
     phone = Column(String(32), default="")
     role = Column(String(30), default="operator")         # super_admin / agent_admin / operator
     tenant = Column(String(64), default="default")
+    whatsapp_session_name = Column(String(255), default="")
     status = Column(String(20), default="active")         # active / disabled
     last_login_at = Column(DateTime, nullable=True)
     login_count = Column(Integer, default=0)
@@ -249,6 +316,10 @@ class ProxyPool(Base):
     used_count = Column(Integer, default=0)
     ok_count = Column(Integer, default=0)
     fail_count = Column(Integer, default=0)
+    last_check_ok = Column(Boolean, nullable=True)
+    is_default = Column(Boolean, default=False)
+    group_id = Column(Integer, nullable=True, index=True)
+    proxy_type = Column(String(20), default='static')
     latency_ms = Column(Integer, nullable=True)
     last_checked_at = Column(DateTime, nullable=True)
     last_used_at = Column(DateTime, nullable=True)
@@ -305,6 +376,18 @@ class PurchaseOrder(Base):
 
 # ---------- 全局参数定义（默认值 / 类型 / 取值范围 / 分组） ----------
 SETTING_DEFS: Dict[str, Dict[str, Any]] = {
+    "billing_enabled": {
+        "default": False, "type": "bool", "category": "billing",
+        "label": "任务自动计费", "description": "仅对真实任务成功执行计费；启用后群发任务必须填写计费国家",
+    },
+    "invite_unit_price": {
+        "default": 0, "type": "float", "category": "billing", "min": 0, "max": 10000,
+        "label": "拉群成功单价", "description": "每成功添加一人费用；0 表示免费，模拟任务不扣费",
+    },
+    "payment_min_confirmations": {
+        "default": 20, "type": "int", "category": "billing", "min": 1, "max": 1000,
+        "label": "到账最少确认数", "description": "来自受信任到账核验服务的链上确认数门槛",
+    },
     "send_interval_min": {
         "default": 5, "type": "int", "category": "send", "min": 1, "max": 600,
         "label": "发送间隔下限（秒）", "description": "同一账号两条消息之间的最小间隔",
@@ -476,11 +559,23 @@ def seed_defaults():
 
 # 轻量迁移：create_all 只建新表，不会给已存在的表补字段
 REQUIRED_COLUMNS: Dict[str, Dict[str, str]] = {
-    "mass_send_task": {"target_type": "VARCHAR(20) DEFAULT 'group'"},
+    "mass_send_task": {
+        "target_type": "VARCHAR(20) DEFAULT 'group'", "accepted": "INTEGER DEFAULT 0",
+        "failed": "INTEGER DEFAULT 0", "last_error": "TEXT DEFAULT ''", "mode": "VARCHAR(20) DEFAULT ''",
+        "scheduled_at": "DATETIME", "billing_country": "VARCHAR(10) DEFAULT ''", "ad_message_id": "INTEGER",
+    },
+    "invite_task": {
+        "processed": "INTEGER DEFAULT 0", "succeeded": "INTEGER DEFAULT 0", "failed": "INTEGER DEFAULT 0",
+        "last_error": "TEXT DEFAULT ''", "mode": "VARCHAR(20) DEFAULT ''", "scheduled_at": "DATETIME",
+    },
+    "sys_user": {"whatsapp_session_name": "VARCHAR(255) DEFAULT ''"},
+    "resource_group": {"source_channel": "VARCHAR(255) DEFAULT ''"},
+    "proxy_pool": {"last_check_ok": "BOOLEAN", "is_default": "BOOLEAN DEFAULT 0", "group_id": "INTEGER", "proxy_type": "VARCHAR(20) DEFAULT 'static'"},
+    "task_log": {"task_kind": "VARCHAR(20) DEFAULT 'mass-send'", "target": "VARCHAR(255) DEFAULT ''", "detail": "TEXT DEFAULT ''"},
     # 注册时自动分配的代理，存完整代理地址（http://user:pass@host:port）
-    "number_pool": {"proxy_ip": "VARCHAR(255)"},
+    "number_pool": {"proxy_ip": "VARCHAR(255)", "failure_reason": "TEXT DEFAULT ''"},
     # 该账号用的是哪个 WhatsApp 登录态目录（支持多账号）
-    "account_pool": {"session_name": "VARCHAR(64) DEFAULT ''"},
+    "account_pool": {"session_name": "VARCHAR(64) DEFAULT ''", "session_enabled": "BOOLEAN DEFAULT 1", "full_params_ready": "BOOLEAN DEFAULT 0", "converted_at": "DATETIME", "nurture_started_at": "DATETIME", "group_id": "INTEGER", "account_type": "VARCHAR(20) DEFAULT 'personal'", "device_type": "VARCHAR(20) DEFAULT 'linked'", "notes": "VARCHAR(500) DEFAULT ''"},
 }
 
 
@@ -515,6 +610,7 @@ class NumberImport(BaseModel):
     phone: str
     source_type: str
     source_channel: str = ""
+    region: str = ""
 
 class RegisterRequest(BaseModel):
     number_ids: List[int]
@@ -526,6 +622,9 @@ class MassSendRequest(BaseModel):
     account_ids: List[int]
     message_content: str
     link_url: str = ""
+    scheduled_at: Optional[datetime] = None
+    billing_country: str = ""
+    ad_message_id: Optional[int] = None
 
 class LoginRequest(BaseModel):
     username: str
@@ -538,6 +637,7 @@ class InviteTaskRequest(BaseModel):
     source_ids: List[int] = []
     account_ids: List[int] = []
     billing_country: str = ""
+    scheduled_at: Optional[datetime] = None
 
 class BatchIdsRequest(BaseModel):
     ids: List[int] = []
@@ -615,8 +715,11 @@ def get_db():
     finally:
         db.close()
 
+def require_login(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    return current_user(authorization, db)
+
 # ---------- 号码导入 ----------
-@app.post("/api/v1/numbers/import")
+@app.post("/api/v1/numbers/import", dependencies=[Depends(require_login)])
 def import_numbers(data: List[NumberImport], db: Session = Depends(get_db)):
     imported, failed = 0, 0
     for item in data:
@@ -628,8 +731,8 @@ def import_numbers(data: List[NumberImport], db: Session = Depends(get_db)):
             source_type=normalize_source_type(item.source_type),
             source_channel=item.source_channel,
             number_segment=item.phone[:6],
-            region="CN",
-            trust_score=random.randint(40, 90)
+            region=item.region,
+            trust_score=0
         ))
         imported += 1
     db.commit()
@@ -644,21 +747,28 @@ def simulate_register(number_id: int, db: Session):
     proxy = allocate_proxy(db, number, country=number.region or "")
     if proxy is None and PROXY_REQUIRED:
         number.status = "failed"
+        number.failure_reason = "没有可用代理"
         db.commit()
         print(f"[register] 号码 #{number.id} 失败：没有可用代理（PROXY_REQUIRED=true）", flush=True)
         return
     number.status = "registering"
     db.commit()
     time.sleep(2)
+    if os.environ.get("REGISTER_MODE", "mock") != "mock":
+        number.status = "failed"
+        number.failure_reason = "未配置真实注册通道；请使用扫码关联已有账号"
+        db.commit()
+        return
     success = random.random() > 0.3
     if success:
         number.status = "success"
+        number.failure_reason = ""
         number.register_time = datetime.now()
         account = AccountPool(
             number_id=number.id,
             device_fingerprint=f"fp_{random.randint(100000,999999)}",
             current_ip=f"{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}",
-            nurture_stage="nurturing",
+            nurture_stage="nurturing", nurture_started_at=datetime.now(),
             health_score=random.randint(80, 100)
         )
         db.add(account)
@@ -666,21 +776,23 @@ def simulate_register(number_id: int, db: Session):
         number.account_id = account.id
     else:
         number.status = "failed"
+        number.failure_reason = "模拟注册失败（非真实注册结果）"
     db.commit()
 
-@app.post("/api/v1/register/batch")
+@app.post("/api/v1/register/batch", dependencies=[Depends(require_login)])
 def batch_register(req: RegisterRequest, background: BackgroundTasks, db: Session = Depends(get_db)):
     for nid in req.number_ids:
         background.add_task(simulate_register, nid, db)
     return {"code": 0, "data": {"message": "注册任务已提交", "count": len(req.number_ids)}}
 
 # ---------- 查询注册状态 ----------
-@app.get("/api/v1/register/status")
+@app.get("/api/v1/register/status", dependencies=[Depends(require_login)])
 def register_status(db: Session = Depends(get_db)):
     numbers = db.query(NumberPool).all()
     return {
         "code": 0,
         "data": {
+            "mode": os.environ.get("REGISTER_MODE", "mock"),
             "total": len(numbers),
             "success": len([n for n in numbers if n.status == "success"]),
             "failed": len([n for n in numbers if n.status == "failed"]),
@@ -690,16 +802,21 @@ def register_status(db: Session = Depends(get_db)):
     }
 
 # ---------- 号码池列表 ----------
-@app.get("/api/v1/numbers")
+@app.get("/api/v1/numbers", dependencies=[Depends(require_login)])
 def list_numbers(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=200),
     status: Optional[str] = None,
     source_type: Optional[str] = None,
+    access_status: Optional[str] = None,
     keyword: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
+    from resource_api import access_rows
+    access = {r["id"]: r for r in access_rows(db)}
     q = db.query(NumberPool)
+    if access_status:
+        q = q.filter(NumberPool.id.in_([nid for nid, row in access.items() if row["status"] == access_status]))
     if status:
         q = q.filter(NumberPool.status == status)
     if source_type:
@@ -718,26 +835,19 @@ def list_numbers(
                 "number_segment": n.number_segment, "region": n.region,
                 "trust_score": n.trust_score, "status": n.status,
                 "register_time": n.register_time, "account_id": n.account_id,
-                "created_at": n.created_at,
+                "created_at": n.created_at, "access_status": access[n.id]["status"], "linked": access[n.id]["linked"],
             } for n in rows],
         },
     }
 
 # ---------- 账号列表 ----------
-@app.get("/api/v1/accounts")
+@app.get("/api/v1/accounts", dependencies=[Depends(require_login)])
 def list_accounts(db: Session = Depends(get_db)):
-    accounts = db.query(AccountPool).all()
-    return {
-        "code": 0,
-        "data": [{
-            "id": a.id, "number_id": a.number_id,
-            "health_score": a.health_score, "status": a.status,
-            "nurture_stage": a.nurture_stage, "ip": a.current_ip
-        } for a in accounts]
-    }
+    from account_management_api import account_rows
+    return {"code": 0, "data": account_rows(db)}
 
 # ---------- 账号详情 ----------
-@app.get("/api/v1/accounts/{account_id}")
+@app.get("/api/v1/accounts/{account_id}", dependencies=[Depends(require_login)])
 def get_account(account_id: int, db: Session = Depends(get_db)):
     acc = db.query(AccountPool).filter_by(id=account_id).first()
     if not acc:
@@ -750,6 +860,7 @@ def get_account(account_id: int, db: Session = Depends(get_db)):
             "phone_number": number.phone_number if number else None,
             "device_fingerprint": acc.device_fingerprint,
             "current_ip": acc.current_ip,
+            "full_params_ready": bool(acc.full_params_ready),
             "nurture_stage": acc.nurture_stage,
             "health_score": acc.health_score,
             "status": acc.status, "created_at": acc.created_at,
@@ -757,7 +868,7 @@ def get_account(account_id: int, db: Session = Depends(get_db)):
     }
 
 # ---------- 暂停账号 ----------
-@app.post("/api/v1/accounts/{account_id}/pause")
+@app.post("/api/v1/accounts/{account_id}/pause", dependencies=[Depends(require_login)])
 def pause_account(account_id: int, db: Session = Depends(get_db)):
     acc = db.query(AccountPool).filter_by(id=account_id).first()
     if not acc:
@@ -767,7 +878,7 @@ def pause_account(account_id: int, db: Session = Depends(get_db)):
     return {"code": 0, "message": "paused"}
 
 # ---------- 恢复账号 ----------
-@app.post("/api/v1/accounts/{account_id}/resume")
+@app.post("/api/v1/accounts/{account_id}/resume", dependencies=[Depends(require_login)])
 def resume_account(account_id: int, db: Session = Depends(get_db)):
     acc = db.query(AccountPool).filter_by(id=account_id).first()
     if not acc:
@@ -778,41 +889,16 @@ def resume_account(account_id: int, db: Session = Depends(get_db)):
 
 # ---------- 创建群发任务 ----------
 def simulate_mass_send(task_id: int, db: Session):
-    task = db.query(MassSendTask).filter_by(id=task_id).first()
-    if not task:
-        return
-    task.status = "running"
-    db.commit()
-    total = len(task.target_ids.split(","))
-    for i in range(total):
-        time.sleep(0.5)
-        task.sent += 1
-        if random.random() > 0.05:
-            task.delivered += 1
-        if random.random() > 0.4:
-            task.read_count += 1
-        db.commit()
-    task.status = "done"
-    db.commit()
+    from operations import run_task
+    run_task("mass-send", task_id, mode="mock")
 
-@app.post("/api/v1/mass-send/tasks")
+@app.post("/api/v1/mass-send/tasks", dependencies=[Depends(require_login)])
 def create_mass_send(req: MassSendRequest, background: BackgroundTasks, db: Session = Depends(get_db)):
-    task = MassSendTask(
-        task_name=req.task_name,
-        target_type="contact" if req.target_type == "contact" else "group",
-        target_ids=",".join(map(str, req.target_ids)),
-        account_ids=",".join(map(str, req.account_ids)),
-        message_content=req.message_content,
-        link_url=req.link_url
-    )
-    db.add(task)
-    db.commit()
-    db.refresh(task)
-    background.add_task(dispatch_mass_send, task.id, db)
-    return {"code": 0, "data": {"task_id": task.id, "status": "pending"}}
+    from operations import create_task
+    return create_task("mass-send", req, background, db)
 
 # ---------- 群发任务列表 ----------
-@app.get("/api/v1/mass-send/tasks")
+@app.get("/api/v1/mass-send/tasks", dependencies=[Depends(require_login)])
 def list_mass_send(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=200),
@@ -838,19 +924,10 @@ def list_mass_send(
     }
 
 # ---------- 查询群发任务 ----------
-@app.get("/api/v1/mass-send/tasks/{task_id}")
+@app.get("/api/v1/mass-send/tasks/{task_id}", dependencies=[Depends(require_login)])
 def get_mass_send(task_id: int, db: Session = Depends(get_db)):
-    task = db.query(MassSendTask).filter_by(id=task_id).first()
-    if not task:
-        return {"code": 404, "message": "任务不存在"}
-    return {
-        "code": 0,
-        "data": {
-            "task_id": task.id, "status": task.status,
-            "target_type": task.target_type or "group",
-            "sent": task.sent, "delivered": task.delivered, "read": task.read_count
-        }
-    }
+    from operations import task_detail
+    return {"code": 0, "data": task_detail("mass-send", task_id, db)}
 
 # ---------- 登录 ----------
 @app.post("/api/v1/auth/login")
@@ -892,7 +969,7 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
     }
 
 # ---------- 资源群列表 ----------
-@app.get("/api/v1/groups")
+@app.get("/api/v1/groups", dependencies=[Depends(require_login)])
 def list_groups(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=200),
@@ -916,28 +993,18 @@ def list_groups(
                 "group_link": g.group_link, "can_speak": g.can_speak,
                 "can_invite": g.can_invite, "approval_mode": g.approval_mode,
                 "group_owner": g.group_owner, "marketing_score": g.marketing_score,
-                "status": g.status,
+                "status": g.status, "source_channel": g.source_channel, "owner_account_id": g.owner_account_id,
             } for g in rows],
         },
     }
 
 # ---------- 拉群任务 ----------
-@app.post("/api/v1/invite/tasks")
-def create_invite_task(req: InviteTaskRequest, db: Session = Depends(get_db)):
-    task = InviteTask(
-        task_name=req.task_name,
-        target_group_id=req.target_group_id,
-        source_type=req.source_type,
-        source_ids=",".join(map(str, req.source_ids)),
-        account_ids=",".join(map(str, req.account_ids)),
-        billing_country=req.billing_country,
-    )
-    db.add(task)
-    db.commit()
-    db.refresh(task)
-    return {"code": 0, "data": {"task_id": task.id, "status": task.status}}
+@app.post("/api/v1/invite/tasks", dependencies=[Depends(require_login)])
+def create_invite_task(req: InviteTaskRequest, background: BackgroundTasks, db: Session = Depends(get_db)):
+    from operations import create_task
+    return create_task("pull-group", req, background, db)
 
-@app.get("/api/v1/invite/tasks")
+@app.get("/api/v1/invite/tasks", dependencies=[Depends(require_login)])
 def list_invite_tasks(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=200),
@@ -980,7 +1047,7 @@ def can_send(account, db: Session):
     return True, "OK"
 
 # ---------- 号码批量删除 ----------
-@app.delete("/api/v1/numbers")
+@app.delete("/api/v1/numbers", dependencies=[Depends(require_login)])
 def delete_numbers(req: BatchIdsRequest, db: Session = Depends(get_db)):
     if not req.ids:
         return {"code": 0, "message": "deleted", "count": 0}
@@ -989,8 +1056,10 @@ def delete_numbers(req: BatchIdsRequest, db: Session = Depends(get_db)):
     return {"code": 0, "message": "deleted", "count": count}
 
 # ---------- 号码导出 ----------
-@app.get("/api/v1/numbers/export")
+@app.get("/api/v1/numbers/export", dependencies=[Depends(require_login)])
 def export_numbers(db: Session = Depends(get_db)):
+    from resource_api import access_rows
+    access = {r["id"]: r for r in access_rows(db)}
     numbers = db.query(NumberPool).order_by(NumberPool.id).all()
     return {
         "code": 0,
@@ -1002,13 +1071,13 @@ def export_numbers(db: Session = Depends(get_db)):
             "number_segment": n.number_segment,
             "region": n.region,
             "trust_score": n.trust_score,
-            "status": n.status,
+            "status": n.status, "access_status": access[n.id]["status"], "linked": access[n.id]["linked"],
             "created_at": n.created_at.isoformat() if n.created_at else None,
         } for n in numbers],
     }
 
 # ---------- 注册失败归因 ----------
-@app.get("/api/v1/register/analysis")
+@app.get("/api/v1/register/analysis", dependencies=[Depends(require_login)])
 def register_analysis(db: Session = Depends(get_db)):
     failed = db.query(NumberPool).filter_by(status="failed").all()
     return {
@@ -1019,33 +1088,22 @@ def register_analysis(db: Session = Depends(get_db)):
                 "id": n.id,
                 "phone": n.phone_number,
                 "source_type": n.source_type,
-                "source_channel": n.source_channel,
+                "source_channel": n.source_channel, "reason": n.failure_reason or "历史记录未保存失败原因",
             } for n in failed],
         },
     }
 
 # ---------- 批量获取群链接 ----------
-@app.post("/api/v1/groups/fetch-links")
+@app.post("/api/v1/groups/fetch-links", dependencies=[Depends(require_login)])
 def fetch_group_links(req: BatchIdsRequest, db: Session = Depends(get_db)):
-    # wasock 接入后改为协议真实获取群链接
-    return {"code": 0, "data": {"updated": 0, "message": "待 wasock 接入"}}
+    from operations import fetch_links
+    return fetch_links(req.ids, db)
 
 # ---------- 拉群任务详情 ----------
-@app.get("/api/v1/invite/tasks/{task_id}")
+@app.get("/api/v1/invite/tasks/{task_id}", dependencies=[Depends(require_login)])
 def get_invite_task(task_id: int, db: Session = Depends(get_db)):
-    task = db.query(InviteTask).filter_by(id=task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="任务不存在")
-    return {
-        "code": 0,
-        "data": {
-            "task_id": task.id,
-            "task_name": task.task_name,
-            "target_group_id": task.target_group_id,
-            "status": task.status,
-            "created_at": task.created_at.isoformat() if task.created_at else None,
-        },
-    }
+    from operations import task_detail
+    return {"code": 0, "data": task_detail("pull-group", task_id, db)}
 
 # ============================================================
 # 真实发送（wasock）—— 由 USE_REAL_SEND 开关控制
@@ -1278,98 +1336,17 @@ def fail_task(db: Session, task: MassSendTask, reason: str, account_id: int = 0)
 
 
 def real_mass_send(task_id: int, db: Session):
-    """真实发送：把消息通过 127.0.0.1:5000 的 wasock Node 服务发出去。
-
-    发送走 send_message()，由 MESSAGE_PROVIDER 决定用哪个通道
-    （wasock / wsapi / mock），换厂商只改这一层。
-    默认的 wasock 通道要求 connect_whatsapp.py 正在运行且已扫码登录。
-
-    与 simulate_mass_send 的差异：
-      * 发送前做三道前置校验：Node 服务是否在跑 / 登录态是否有效 / 发送策略是否允许；
-      * 每条消息按系统设置里的 send_interval_min/max 随机间隔发送，并写 TaskLog；
-      * 文案支持 {name} / {phone} / {link} 变量，未写 {link} 时自动附上超链。
-    """
-    task = db.query(MassSendTask).filter_by(id=task_id).first()
-    if not task:
-        return
-
-    account_ids = [int(x) for x in (task.account_ids or "").split(",") if x.strip().isdigit()]
-    primary_account_id = account_ids[0] if account_ids else 0
-
-    target_ids = [int(x) for x in (task.target_ids or "").split(",") if x.strip().isdigit()]
-    if not target_ids:
-        fail_task(db, task, "任务没有可用的目标 ID", primary_account_id)
-        return
-
-    # 发消息通道健康检查（wasock / wsapi / mock 各自判定）
-    ready, reason = message_provider_ready()
-    if not ready:
-        fail_task(db, task, reason, primary_account_id)
-        return
-
-    # 发送策略校验：新设备冷却 / 健康度 / 每日上限，参数来自系统设置
-    account = db.query(AccountPool).filter_by(id=primary_account_id).first() if primary_account_id else None
-    if account:
-        allowed, reason = can_send(account, db)
-        if not allowed:
-            fail_task(db, task, f"账号 #{account.id} 不满足发送策略：{reason}", primary_account_id)
-            return
-
-    task.status = "running"
-    db.commit()
-
-    target_type = task.target_type or "group"
-    success = 0
-    for target_id in target_ids:
-        target = resolve_send_target(db, target_id, target_type)
-        if target["error"]:
-            record_send_log(db, task, primary_account_id, "failed")
-            print(f"[real_mass_send] 任务 #{task.id} 跳过目标：{target['error']}", flush=True)
-            continue
-
-        text = render_mass_message(task, target)
-        ok, detail = False, ""
-        for attempt in range(SEND_RETRY_TIMES + 1):
-            ok, detail = send_message(target["chat"], text)
-            if ok:
-                break
-            print(f"[real_mass_send] 任务 #{task.id} 第 {attempt + 1} 次发送失败："
-                  f"{target['chat']} -> {detail}", flush=True)
-            if attempt < SEND_RETRY_TIMES:
-                time.sleep(SEND_RETRY_WAIT)
-
-        task.sent += 1
-        if ok:
-            success += 1
-            task.delivered += 1
-        record_send_log(db, task, primary_account_id, "success" if ok else "failed")
-        db.commit()
-
-        time.sleep(send_interval_seconds(db))
-
-    task.status = "done" if success else "failed"
-    db.commit()
-    print(f"[real_mass_send] 任务 #{task.id} 结束：成功 {success} / 共 {len(target_ids)} 个目标，"
-          f"状态 {task.status}", flush=True)
+    from operations import run_task
+    run_task("mass-send", task_id, mode="real")
 
 
 def dispatch_mass_send(task_id: int, db: Session):
-    """群发入口：按 USE_REAL_SEND 决定走真实发送还是模拟发送（默认模拟）。
-
-    开关是运行时读的（环境变量优先，其次 .env），所以改完 .env 不用重启后端。
-    """
     if real_send_enabled():
-        print(f"[群发] 任务 #{task_id} 走【真实发送】—— 消息会真的发出去", flush=True)
         real_mass_send(task_id, db)
     else:
-        print(f"[群发] 任务 #{task_id} 走【模拟发送】（USE_REAL_SEND=false）", flush=True)
         simulate_mass_send(task_id, db)
 
-# ============================================================
-# P2 —— 广告消息 / 余额计费 / 个人中心 / 系统设置
-# ============================================================
 
-# ---------- 统一错误结构 ----------
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc: HTTPException):
     """把 HTTPException 也包装成 { code, message }，前端拦截器可直接提示。"""
@@ -1829,18 +1806,19 @@ def current_balance(db: Session) -> Decimal:
 def add_transaction(db: Session, tx_type: str, amount: Any, *, country: str = "",
                     task: str = "", task_type: str = "", task_id: Optional[int] = None,
                     result: str = "success", remark: str = "") -> BalanceTransaction:
-    before = current_balance(db)
-    delta = _dec(amount)
-    row = BalanceTransaction(
-        type=tx_type, amount=delta, balance_before=before, balance_after=before + delta,
-        currency=str(get_setting(db, "currency", "USDT")), country=country or "",
-        task=task or "", task_type=task_type or "", task_id=task_id,
-        result=result, remark=remark or "",
-    )
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    return row
+    with operations._channel_lock:
+        before = current_balance(db)
+        delta = _dec(amount)
+        row = BalanceTransaction(
+            type=tx_type, amount=delta, balance_before=before, balance_after=before + delta,
+            currency=str(get_setting(db, "currency", "USDT")), country=country or "",
+            task=task or "", task_type=task_type or "", task_id=task_id,
+            result=result, remark=remark or "",
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return row
 
 
 def transaction_dict(row: BalanceTransaction) -> Dict[str, Any]:
@@ -2010,28 +1988,10 @@ def list_recharge_orders(
 @app.post("/api/v1/balance/recharge/{order_id}/confirm")
 def confirm_recharge(order_id: int, db: Session = Depends(get_db),
                      user: User = Depends(require_admin)):
-    """模拟到账确认（链上回调接入前的过渡实现）。"""
-    order = get_order_or_404(db, order_id)
-    if order.status == "paid":
-        raise HTTPException(status_code=400, detail="订单已到账，请勿重复确认")
-    if order.status != "pending":
-        raise HTTPException(status_code=400, detail=f"订单状态为 {order.status}，无法确认到账")
-    if order.expire_at and order.expire_at < datetime.now():
-        order.status = "expired"
-        db.commit()
-        raise HTTPException(status_code=400, detail="订单已过期，请重新创建充值订单")
-    order.status = "paid"
-    order.paid_at = datetime.now()
-    order.tx_hash = order.tx_hash or f"mock-{secrets.token_hex(16)}"
-    db.commit()
-    tx = add_transaction(db, "recharge", order.amount,
-                         remark=f"充值订单 {order.order_no} 到账")
-    log_operation(db, "confirm_recharge", target=order.order_no,
-                  detail=f"确认到账 {order.amount} {order.currency}", user=user)
-    return {"code": 0, "data": {
-        "order": order_dict(order), "transaction": transaction_dict(tx),
-        "balance": _money(current_balance(db)),
-    }}
+    """管理员人工审核确认；与签名回调共用原子入账流程。"""
+    from finance_api import credit_order
+    with operations._channel_lock:
+        return credit_order(order_id, db, user=user)
 
 
 @app.post("/api/v1/balance/recharge/{order_id}/cancel")
@@ -2332,7 +2292,9 @@ def proxy_dict(row: ProxyPool) -> Dict[str, Any]:
     return {
         "id": row.id, "host": row.host, "port": row.port,
         "protocol": row.protocol, "username": row.username,
-        "address": row.address, "country": row.country or "", "asn": row.asn or "",
+        "address": f"{row.protocol}://{row.host}:{row.port}", "country": row.country or "", "asn": row.asn or "",
+        "is_default": bool(row.is_default),
+        "group_id": row.group_id, "proxy_type": row.proxy_type or 'static',
         "provider": row.provider or "", "status": row.status,
         "bound_number_id": row.bound_number_id, "used_count": row.used_count or 0,
         "ok_count": row.ok_count or 0, "fail_count": row.fail_count or 0,
@@ -2415,6 +2377,7 @@ def check_proxy(db: Session, row: ProxyPool, *, target: str = "web.whatsapp.com"
     info = parse_proxy_line(f"{row.protocol}://{row.username}:{row.password}@{row.host}:{row.port}")
     ok, detail = test_proxy_conn(info, target=(target, port)) if info else (False, "代理配置无法解析")
     row.last_checked_at = datetime.now()
+    row.last_check_ok = ok
     if ok:
         row.ok_count = (row.ok_count or 0) + 1
         try:
@@ -2490,12 +2453,13 @@ def normalize_phone_simple(raw: str) -> str:
 # ---------------------------------------------------------------- 发消息通道
 def _wasock_ready() -> Tuple[bool, str]:
     if not wasock_is_running():
-        return False, (f"wasock Node 服务未运行（{WASOCK_HOST}:{WASOCK_PORT}），"
-                       f"请先运行 python connect_whatsapp.py 并保持它在线")
-    if not is_wasock_logged_in():
-        return False, (f"没有可用的 WhatsApp 登录态（{WASOCK_AUTH_NAME}/creds.json），"
-                       f"请先运行 connect_whatsapp.py 扫码登录")
-    return True, ""
+        return False, 'wasock Node 服务未运行，请在账号页启动关联'
+    try:
+        result = wasock_request({'action':'listSessions'},timeout=2)
+        count = sum(row.get('status')=='connected' for row in result.get('sessions',[]))
+        return (True, f'{count} 个 WhatsApp 账号在线') if count else (False, '没有已连接的 WhatsApp 账号')
+    except Exception:
+        return False, '会话服务状态无法读取，请确认 Node 服务已升级'
 
 
 def message_provider_ready() -> Tuple[bool, str]:
@@ -2562,12 +2526,18 @@ def providers_status(db: Session = Depends(get_db), user: User = Depends(current
 @app.get("/api/v1/proxies")
 def list_proxies(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=200),
                  status: Optional[str] = None, country: Optional[str] = None,
+                 proxy_type: Optional[str] = None, group_id: Optional[int] = None,
                  db: Session = Depends(get_db), user: User = Depends(current_user)):
+    migrate_exit_proxy(db)
     q = db.query(ProxyPool)
     if status:
         q = q.filter(ProxyPool.status == status)
     if country:
         q = q.filter(ProxyPool.country == country)
+    if proxy_type:
+        q = q.filter(ProxyPool.proxy_type == proxy_type)
+    if group_id is not None:
+        q = q.filter(ProxyPool.group_id == group_id)
     total = q.count()
     rows = q.order_by(ProxyPool.id.desc()).offset((page - 1) * size).limit(size).all()
     return {"code": 0, "data": {"total": total, "page": page, "size": size,
@@ -2588,11 +2558,64 @@ def sync_proxies(payload: Optional[Dict[str, Any]] = None, db: Session = Depends
     return {"code": 0, "data": result}
 
 
+def migrate_exit_proxy(db):
+    """Preserve the formerly configured exit in the resource pool without echoing credentials."""
+    if db.query(ProxyPool).filter_by(is_default=True).first():
+        return
+    from whatsapp_session import setting
+    info = parse_proxy_line(setting('WA_PROXY_URL', ''))
+    if not info:
+        return
+    row = db.query(ProxyPool).filter_by(host=info.host, port=info.port, protocol=info.protocol, username=info.username, password=info.password).first()
+    if row is None:
+        row = ProxyPool(host=info.host, port=info.port, protocol=info.protocol,
+                        username=info.username, password=info.password, provider='manual', status='free')
+        db.add(row)
+    if row.provider != 'mock' and row.status != 'disabled':
+        row.is_default = True
+        db.commit()
+
+
+@app.post('/api/v1/proxies/{proxy_id}/default')
+def set_default_proxy(proxy_id: int, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    row = db.get(ProxyPool, proxy_id)
+    if not row or row.provider == 'mock' or row.status == 'disabled':
+        raise HTTPException(422, '请选择真实且未停用的代理')
+    db.query(ProxyPool).update({ProxyPool.is_default: False})
+    row.is_default = True
+    db.commit()
+    log_operation(db, 'default_proxy', target=str(row.id), detail='设置 WhatsApp 默认出口；重新连接后生效', user=user)
+    return {'code': 0, 'data': proxy_dict(row)}
+
+
+@app.put('/api/v1/proxies/{proxy_id}')
+def edit_pool_proxy(proxy_id: int, payload: Dict[str, Any], db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    row = db.get(ProxyPool, proxy_id)
+    if not row:
+        raise HTTPException(404, '代理不存在')
+    if row.bound_number_id or row.status == 'in_use':
+        raise HTTPException(409, '请先解除账号代理分配，再编辑代理')
+    info = parse_proxy_line(str(payload.get('text') or ''))
+    if not info:
+        raise HTTPException(422, '请输入有效的完整 HTTP 或 SOCKS5 代理地址')
+    row.host, row.port, row.protocol = info.host, info.port, info.protocol
+    row.username, row.password = info.username, info.password
+    row.provider, row.status = 'manual', 'free'
+    row.last_check_ok = row.latency_ms = row.last_checked_at = None
+    db.commit()
+    log_operation(db, 'edit_proxy', target=str(row.id), detail='更新代理配置', user=user)
+    return {'code': 0, 'data': proxy_dict(row)}
+
+
 @app.post("/api/v1/proxies/import")
 def import_proxies(payload: Dict[str, Any], db: Session = Depends(get_db),
                    user: User = Depends(require_admin)):
     """手工导入代理：text 每行一个 host:port:user:pass 或 socks5://...。"""
     _require_providers()
+    from workspace_api import check_group
+    check_group(db, payload.get('group_id'), 'proxy')
+    if payload.get('proxy_type', 'static') not in ('static', 'dynamic'):
+        raise HTTPException(422, '代理类型无效')
     lines = str(payload.get("text") or "").replace(";", "\n").replace(",", "\n").split("\n")
     added = skipped = 0
     for line in lines:
@@ -2607,6 +2630,7 @@ def import_proxies(payload: Dict[str, Any], db: Session = Depends(get_db),
         db.add(ProxyPool(host=info.host, port=info.port, username=info.username,
                          password=info.password, protocol=info.protocol,
                          country=str(payload.get("country") or ""), provider="manual",
+                         group_id=payload.get('group_id'), proxy_type=payload.get('proxy_type', 'static'),
                          status="free"))
         added += 1
     db.commit()
@@ -2840,20 +2864,24 @@ def sync_purchase_order(order_id: int, db: Session = Depends(get_db),
 # ============================================================
 # 面板内扫码登录 WhatsApp（支持多个账号）
 # ============================================================
-def current_session_name() -> str:
+def current_session_name(user=None) -> str:
     if not WHATSAPP_SESSION_AVAILABLE:
         return ""
-    return get_session().snapshot().get("auth_name") or ""
+    return (user.whatsapp_session_name or "") if user is not None else (get_session().snapshot().get("auth_name") or "")
 
 
-def whatsapp_status_dict(db: Session) -> Dict[str, Any]:
+def whatsapp_status_dict(db: Session, auth_name=None) -> Dict[str, Any]:
     """会话状态 + 二维码 + 当前会话对应的账号。"""
     if not WHATSAPP_SESSION_AVAILABLE:
         return {"status": "unavailable", "qr_image": "", "node_running": False,
                 "registered": False, "paired_phone": "", "auth_name": "",
                 "account_id": None, "number_id": None,
                 "hint": f"会话模块不可用：{WHATSAPP_SESSION_ERROR}"}
-    status = get_session().snapshot()
+    if auth_name == "":
+        from whatsapp_session import SessionState
+        status = SessionState(node_running=is_node_running()).to_dict()
+    else:
+        status = get_session(auth_name).snapshot()
     auth_name = status.get("auth_name") or ""
     status["auth_name"] = auth_name
     phone = read_paired_phone(auth_name) if auth_name else ""
@@ -2884,7 +2912,7 @@ def whatsapp_status_dict(db: Session) -> Dict[str, Any]:
         if status["registered"]:
             status["hint"] = f"已以 {phone} 上线，并已登记为账号 #{account.id}"
         else:
-            status["hint"] = "已登录，点「登记到账号池」即可用于群发"
+            status["hint"] = "已登录，点「完成账号接入」即可用于运营"
     elif status["status"] == "starting":
         status["hint"] = "正在建立会话，稍候…"
     elif status["status"] in ("error", "closed"):
@@ -2914,101 +2942,111 @@ def pick_start_auth_name(mode: str, want: str, db: Session) -> str:
     return DEFAULT_AUTH_NAME
 
 
-@app.get("/api/v1/whatsapp/status")
-def whatsapp_status(db: Session = Depends(get_db), user: User = Depends(current_user)):
-    """会话状态。前端轮询这个接口拿二维码与进度。"""
-    return {"code": 0, "data": whatsapp_status_dict(db)}
+def resolve_user_session(auth_name, user, db):
+    """Pending QR belongs to its creator; registered accounts are shared by this workspace."""
+    from whatsapp_session import auth_path
+    name = auth_name or current_session_name(user)
+    if not name:
+        return ''
+    path = auth_path(name).resolve()
+    allowed = bool(user.whatsapp_session_name and auth_path(user.whatsapp_session_name).resolve() == path)
+    if not allowed:
+        allowed = any(auth_path(link.auth_name).resolve()==path for link in db.query(WhatsAppLinkSession).filter_by(owner_user_id=user.id))
+    if not allowed:
+        allowed = any(auth_path(account.session_name).resolve() == path for account in db.query(AccountPool).filter(AccountPool.session_name != '', AccountPool.session_name.isnot(None)))
+    if not allowed:
+        raise HTTPException(403, '没有访问该扫码会话的权限')
+    return name
 
 
-@app.get("/api/v1/whatsapp/sessions")
+@app.get('/api/v1/whatsapp/status')
+def whatsapp_status(auth_name: str = '', db: Session = Depends(get_db), user: User = Depends(current_user)):
+    name = resolve_user_session(auth_name, user, db)
+    return {'code': 0, 'data': whatsapp_status_dict(db, name)}
+
+
+@app.get('/api/v1/whatsapp/sessions')
 def whatsapp_sessions(db: Session = Depends(get_db), user: User = Depends(current_user)):
-    """本机已有的登录态目录，以及各自对应的账号。"""
     if not WHATSAPP_SESSION_AVAILABLE:
-        return {"code": 0, "data": {"list": [], "active": "", "next": ""}}
-    active = current_session_name()
-    items = list_auth_dirs()
-    for item in items:
-        phone = item.get("paired_phone") or ""
-        number = db.query(NumberPool).filter_by(phone_number=phone).first() if phone else None
-        account = None
-        if number is not None:
-            account = (db.query(AccountPool).filter_by(id=number.account_id).first()
-                       if number.account_id else None)
-            if account is None:
-                account = db.query(AccountPool).filter_by(number_id=number.id).first()
-        item["account_id"] = account.id if account else None
-        item["number_id"] = number.id if number else None
-        item["active"] = item["auth_name"] == active
-    return {"code": 0, "data": {"list": items, "active": active,
-                                "next": next_auth_name()}}
+        return {'code':0,'data':{'list':[],'active':'','next':''}}
+    active = current_session_name(user)
+    accounts = db.query(AccountPool).filter(AccountPool.session_name != '', AccountPool.session_name.isnot(None)).all()
+    numbers = {n.id:n for n in db.query(NumberPool).all()}
+    items = []
+    for account in accounts:
+        name = account.session_name
+        snapshot = get_session(name).snapshot()
+        phone = read_paired_phone(name)
+        items.append({'auth_name':name,'paired_phone':phone,'paired':bool(phone),'files':0,
+                      'account_id':account.id,'number_id':account.number_id,'active':name==active,
+                      'status':snapshot['status']})
+    return {'code':0,'data':{'list':items,'active':active,'next':''}}
 
 
-@app.post("/api/v1/whatsapp/start")
-def whatsapp_start(payload: Optional[Dict[str, Any]] = None, db: Session = Depends(get_db),
-                   user: User = Depends(current_user)):
-    """启动会话。
-
-    body { mode: "new" | "current", auth_name?: string }
-      new     -> 用全新目录，出二维码，用于关联新账号
-      current -> 用已有账号的目录（默认），直接以该号上线，不出二维码
-    """
+@app.post('/api/v1/whatsapp/start')
+def whatsapp_start(payload: Optional[Dict[str, Any]] = None, db: Session = Depends(get_db), user: User = Depends(current_user)):
     if not WHATSAPP_SESSION_AVAILABLE:
-        raise HTTPException(status_code=503, detail=f"会话模块不可用：{WHATSAPP_SESSION_ERROR}")
+        raise HTTPException(503, f'会话模块不可用：{WHATSAPP_SESSION_ERROR}')
     payload = payload or {}
-    mode = str(payload.get("mode") or "current").strip().lower()
-    auth_name = pick_start_auth_name(mode, str(payload.get("auth_name") or "").strip(), db)
-
-    current = whatsapp_status_dict(db)
-    if (current["node_running"] and not current.get("node_owned")
-            and not current["auth_name"] and current["status"] in ("idle", "error")):
-        current["hint"] = ("127.0.0.1:5000 已被占用，通常是终端里的 connect_whatsapp.py 正在运行。"
-                           "请先关掉它再启动，避免两个会话互相顶掉")
-        return {"code": 0, "data": current}
-
-    get_session().start(auth_name)
-    log_operation(db, "whatsapp_start", target=auth_name,
-                  detail=f"启动扫码会话（{mode}）", user=user)
-    return {"code": 0, "data": whatsapp_status_dict(db)}
-
-
-@app.post("/api/v1/whatsapp/switch")
-def whatsapp_switch(payload: Dict[str, Any], db: Session = Depends(get_db),
-                    user: User = Depends(current_user)):
-    """切换到某个账号的会话（wasock 同一时间只能有一个会话，所以是切换而不是并存）。"""
-    if not WHATSAPP_SESSION_AVAILABLE:
-        raise HTTPException(status_code=503, detail=f"会话模块不可用：{WHATSAPP_SESSION_ERROR}")
-    account_id = payload.get("account_id")
-    account = db.query(AccountPool).filter_by(id=account_id).first() if account_id else None
-    if account is None:
-        raise HTTPException(status_code=404, detail="账号不存在")
-    if not account.session_name:
-        raise HTTPException(status_code=400,
-                            detail=f"账号 #{account.id} 没有绑定登录态，请先用「关联新账号」扫码")
-    if not (Path(account.session_name) / "creds.json").is_file():
-        raise HTTPException(status_code=400,
-                            detail=f"账号 #{account.id} 的登录态目录不存在（{account.session_name}），需要重新扫码")
-    get_session().start(account.session_name)
-    log_operation(db, "whatsapp_switch", target=account.session_name,
-                  detail=f"切换到账号 #{account.id}", user=user)
-    return {"code": 0, "data": whatsapp_status_dict(db)}
+    mode = str(payload.get('mode') or 'current')
+    if mode not in ('new','current'):
+        raise HTTPException(422,'启动方式无效')
+    if mode == 'new':
+        import uuid
+        name = f'{DEFAULT_AUTH_NAME}_u{user.id}_{uuid.uuid4().hex[:12]}'
+        db.add(WhatsAppLinkSession(auth_name=name,owner_user_id=user.id))
+    else:
+        name = resolve_user_session(str(payload.get('auth_name') or ''),user,db)
+        if not name:
+            account = db.query(AccountPool).filter(AccountPool.session_name != '', AccountPool.session_name.isnot(None)).order_by(AccountPool.id).first()
+            if not account:
+                raise HTTPException(409,'没有已关联账号，请选择关联新账号扫码')
+            name = account.session_name
+    from account_management_api import proxy_for_session
+    with operations.session_control_guard(name):
+        for account in db.query(AccountPool).filter_by(session_name=name):
+            account.session_enabled = True
+        user.whatsapp_session_name = name; db.commit()
+        get_session(name).start(name, proxy_override=proxy_for_session(db,name))
+    log_operation(db,'whatsapp_start',target=name,detail=f'启动独立账号会话（{mode}）',user=user)
+    return {'code':0,'data':whatsapp_status_dict(db,name)}
 
 
-@app.post("/api/v1/whatsapp/stop")
-def whatsapp_stop(db: Session = Depends(get_db), user: User = Depends(current_user)):
-    """断开会话。不删除登录态，下次仍是同一个号。"""
-    if WHATSAPP_SESSION_AVAILABLE:
-        get_session().stop()
-    log_operation(db, "whatsapp_stop", target="whatsapp", detail="断开扫码会话", user=user)
-    return {"code": 0, "data": whatsapp_status_dict(db)}
+@app.post('/api/v1/whatsapp/switch')
+def whatsapp_switch(payload: Dict[str, Any], db: Session = Depends(get_db), user: User = Depends(current_user)):
+    account = db.get(AccountPool,payload.get('account_id'))
+    if not account or not account.session_name:
+        raise HTTPException(404,'账号不存在或尚未绑定登录会话')
+    from account_management_api import proxy_for_session
+    with operations.session_control_guard(account.session_name):
+        account.session_enabled = True
+        user.whatsapp_session_name = account.session_name; db.commit()
+        get_session(account.session_name).start(account.session_name,proxy_override=proxy_for_session(db,account.session_name))
+    log_operation(db,'whatsapp_select',target=account.session_name,detail=f'选择账号 #{account.id}，其他账号保持连接',user=user)
+    return {'code':0,'data':whatsapp_status_dict(db,account.session_name)}
+
+
+@app.post('/api/v1/whatsapp/stop')
+def whatsapp_stop(payload: Optional[Dict[str, Any]] = None, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    name = resolve_user_session((payload or {}).get('auth_name',''),user,db)
+    if not name:
+        raise HTTPException(409,'请先选择账号')
+    with operations.session_control_guard(name):
+        get_session(name).stop()
+        for account in db.query(AccountPool).filter_by(session_name=name):
+            account.session_enabled = False
+        db.commit()
+    log_operation(db,'whatsapp_stop',target=name,detail='断开指定账号会话，其他账号保持连接',user=user)
+    return {'code':0,'data':whatsapp_status_dict(db,name)}
 
 
 @app.post("/api/v1/whatsapp/register-account")
-def whatsapp_register_account(db: Session = Depends(get_db),
+def whatsapp_register_account(payload: Optional[Dict[str, Any]] = None, db: Session = Depends(get_db),
                               user: User = Depends(require_admin)):
     """把当前会话的号登记进号码池 / 账号池，并记住它用的是哪个登录态目录。"""
     if not WHATSAPP_SESSION_AVAILABLE:
         raise HTTPException(status_code=503, detail=f"会话模块不可用：{WHATSAPP_SESSION_ERROR}")
-    auth_name = current_session_name()
+    auth_name = resolve_user_session((payload or {}).get('auth_name',''),user,db)
     phone = read_paired_phone(auth_name) if auth_name else ""
     if not phone:
         raise HTTPException(status_code=400, detail="还没有完成扫码登录，无法登记")
@@ -3040,8 +3078,10 @@ def whatsapp_register_account(db: Session = Depends(get_db),
     else:
         account.nurture_stage = "ready"
         account.status = "normal"
+        number.account_id = account.id
     # 记住这个账号对应哪个登录态目录，之后才能一键切回来
     account.session_name = auth_name
+    account.session_enabled = True
     db.commit()
 
     log_operation(db, "whatsapp_register_account", target=phone,
@@ -3060,16 +3100,24 @@ def whatsapp_unlink(payload: Optional[Dict[str, Any]] = None, db: Session = Depe
     if not WHATSAPP_SESSION_AVAILABLE:
         raise HTTPException(status_code=503, detail=f"会话模块不可用：{WHATSAPP_SESSION_ERROR}")
     payload = payload or {}
-    auth_name = str(payload.get("auth_name") or current_session_name()).strip()
+    auth_name = resolve_user_session(str(payload.get("auth_name") or "").strip(),user,db)
     if not auth_name:
         raise HTTPException(status_code=400, detail="没有指定要解绑的登录态")
-    if auth_name == current_session_name():
-        get_session().stop()
-    removed = remove_auth_dir(auth_name)
-    # 清掉账号上的绑定
-    for account in db.query(AccountPool).filter_by(session_name=auth_name).all():
-        account.session_name = ""
-    db.commit()
+    with operations.session_control_guard(auth_name):
+        from account_management_api import account_in_use
+        for account in db.query(AccountPool).filter_by(session_name=auth_name):
+            if account_in_use(db,account.id):
+                raise HTTPException(409,'该账号被未结束任务使用，请先取消任务')
+        get_session(auth_name).stop()
+        removed = remove_auth_dir(auth_name)
+        for account in db.query(AccountPool).filter_by(session_name=auth_name).all():
+            account.session_name = ''
+            account.session_enabled = False
+            account.full_params_ready = False
+            account.converted_at = None
+        for selected in db.query(User).filter_by(whatsapp_session_name=auth_name):
+            selected.whatsapp_session_name = ''
+        db.commit()
     log_operation(db, "whatsapp_unlink", target=auth_name, detail="解绑登录态", user=user)
     return {"code": 0, "data": {"removed": removed, "auth_name": auth_name,
                                 "message": f"已删除登录态目录 {auth_name}"}}
@@ -3091,12 +3139,14 @@ def delete_purchase_order(order_id: int, db: Session = Depends(get_db),
 # ---------- 数据看板 ----------
 def aggregate_tasks(tasks: List[MassSendTask]) -> Dict[str, Any]:
     """把一批任务的计数汇总成看板口径。"""
-    sent = sum(t.sent or 0 for t in tasks)
+    sent = sum((t.accepted or 0) if t.mode else (t.sent or 0) for t in tasks)
     delivered = sum(t.delivered or 0 for t in tasks)
     read = sum(t.read_count or 0 for t in tasks)
     return {
+        "mock_tasks": sum(t.mode == "mock" for t in tasks),
+        "legacy_tasks": sum(not t.mode for t in tasks),
         "tasks": len(tasks), "sent": sent, "delivered": delivered, "read": read,
-        "failed": max(0, sent - delivered),
+        "failed": sum(t.failed or 0 for t in tasks),
         "success_rate": _rate(delivered, sent),
         "read_rate": _rate(read, delivered),
     }
@@ -3110,13 +3160,13 @@ def task_brief(task: MassSendTask) -> Dict[str, Any]:
         "id": task.id, "task_name": task.task_name or "", "status": task.status,
         "target_type": task.target_type or "group", "targets": targets,
         "sent": sent, "delivered": delivered, "read": task.read_count or 0,
-        "failed": max(0, sent - delivered),
+        "failed": task.failed or 0,
         "progress": _rate(sent, targets) if targets else 0.0,
         "created_at": _dt(task.created_at),
     }
 
 
-@app.get("/api/v1/dashboard/today")
+@app.get("/api/v1/dashboard/today", dependencies=[Depends(require_login)])
 def dashboard_today(db: Session = Depends(get_db)):
     """今日概览：只统计今天创建的任务（此前是把所有任务累加，口径不对）。"""
     today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -3143,7 +3193,23 @@ def dashboard_overview(db: Session = Depends(get_db), user: User = Depends(curre
     active_tasks = (db.query(MassSendTask)
                     .filter(MassSendTask.status.in_(("pending", "running")))
                     .order_by(MassSendTask.id.desc()).limit(5).all())
-    recent_tasks = db.query(MassSendTask).order_by(MassSendTask.id.desc()).limit(5).all()
+
+    invite_tasks = db.query(InviteTask).all()
+    combined_tasks = [{**task_brief(t), "kind": "mass-send"} for t in all_tasks]
+    combined_tasks += [{
+        "id": t.id, "task_name": t.task_name or "", "status": t.status,
+        "kind": "pull-group", "created_at": _dt(t.created_at),
+        "targets": len([x for x in (t.source_ids or "").split(",") if x.strip()]),
+        "sent": t.processed or 0, "delivered": None,
+        "progress": _rate(t.processed or 0, len([x for x in (t.source_ids or "").split(",") if x.strip()])),
+    } for t in invite_tasks]
+    combined_tasks.sort(key=lambda t: (t["created_at"] or "", t["id"]), reverse=True)
+    task_counts = {
+        "running": sum(t["status"] == "running" for t in combined_tasks),
+        "pending": sum(t["status"] == "pending" for t in combined_tasks),
+        "done": sum(t["status"] == "done" for t in combined_tasks),
+        "failed": sum(t["status"] == "failed" for t in combined_tasks),
+    }
 
     def account_count(status: str) -> int:
         return len([a for a in accounts if a.status == status])
@@ -3167,7 +3233,27 @@ def dashboard_overview(db: Session = Depends(get_db), user: User = Depends(curre
             "banned": account_count("banned"),
         },
         "active_tasks": [task_brief(t) for t in active_tasks],
-        "recent_tasks": [task_brief(t) for t in recent_tasks],
+        "recent_tasks": combined_tasks[:5],
+        "task_counts": task_counts,
+        "resources": {
+            "available_numbers": db.query(NumberPool).filter_by(status="pending").count(),
+            "groups": db.query(ResourceGroup).filter_by(status="active").count(),
+        },
         "providers": providers,
         "generated_at": _dt(datetime.now()),
     }}
+
+# Operational endpoints and lifecycle use the same models/database as the core API.
+import operations
+operations.register(app)
+import service_api, resource_api, finance_api, account_export_api, account_management_api
+app.include_router(service_api.router)
+app.include_router(resource_api.router)
+app.include_router(resource_api.resources_router)
+Base.metadata.create_all(bind=engine)
+app.include_router(finance_api.router)
+app.include_router(account_export_api.router)
+app.include_router(account_management_api.router)
+import workspace_api
+Base.metadata.create_all(bind=engine)
+app.include_router(workspace_api.router)

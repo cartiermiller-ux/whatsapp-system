@@ -73,3 +73,6 @@ Thumbs.db
 # 本地临时工作区（排查记录、备份、解包产物等）
 # ============================================================
 .cowork-temp/
+
+# Local service credentials
+.runtime/

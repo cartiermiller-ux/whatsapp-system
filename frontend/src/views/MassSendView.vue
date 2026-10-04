@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <PageTemplate kind="list">
     <div class="page-header">
       <div>
         <h2>群发任务</h2>
@@ -98,6 +98,7 @@
             </el-form-item>
 
             <el-form-item label="发送账号">
+              <el-select v-model="accountGroup" clearable placeholder="按账号分组选择" style="width:100%;margin-bottom:8px" @change="selectAccountGroup"><el-option v-for="group in accountGroups" :key="group.id" :value="group.id" :label="`${group.name}（${group.count} 个账号）`"/></el-select>
               <el-select
                 v-model="form.account_ids"
                 multiple
@@ -134,26 +135,9 @@
             </el-form-item>
 
             <el-collapse class="section-gap block-gap">
-              <el-collapse-item title="高级选项（暂未开放）" name="advanced">
-            <el-form-item label="发送策略">
-              <el-radio-group v-model="form.strategy" disabled>
-                <el-radio-button value="ai">AI 自动</el-radio-button>
-                <el-radio-button value="manual">手动</el-radio-button>
-              </el-radio-group>
-              <el-tag type="info" size="small" effect="plain" class="inline-tag">待接入</el-tag>
-            </el-form-item>
-
-            <el-form-item label="定时发送">
-              <el-date-picker
-                v-model="form.scheduled_at"
-                type="datetime"
-                placeholder="立即发送"
-                style="width: 100%"
-                disabled
-              />
-              <el-tag type="info" size="small" effect="plain" class="inline-tag">待接入</el-tag>
-            </el-form-item>
-
+              <el-collapse-item title="发送计划与计费" name="advanced">
+                <el-form-item label="计划发送时间"><el-date-picker v-model="form.scheduled_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" placeholder="立即发送" style="width: 100%" /></el-form-item>
+                <el-form-item label="计费国家"><el-select v-model="form.billing_country" clearable placeholder="自动计费启用后必填"><el-option v-for="country in billingCountries" :key="country" :value="country" :label="country" /></el-select></el-form-item>
               </el-collapse-item>
             </el-collapse>
             <el-button
@@ -167,28 +151,22 @@
           </el-form>
     </el-drawer>
 
-    <el-drawer v-model="detailVisible" title="任务详情" size="460px">
-      <div v-loading="detailLoading">
-        <el-descriptions v-if="detailRow" :column="1" border>
-          <el-descriptions-item label="任务 ID">{{ detailRow.id }}</el-descriptions-item>
-          <el-descriptions-item label="任务名称">{{ detailRow.task_name }}</el-descriptions-item>
-          <el-descriptions-item label="状态">
-            <el-tag :type="statusTagType(currentStatus)" size="small">
-              {{ TASK_STATUS_LABEL[currentStatus] || currentStatus }}
-            </el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="创建时间">{{ formatDateTime(detailRow.created_at) }}</el-descriptions-item>
-        </el-descriptions>
-
+    <el-drawer v-model="detailVisible" title="任务详情" size="780px">
+      <PageTemplate kind="task-detail" v-loading="detailLoading">
+        <div v-if="detailRow" class="page-header">
+          <div><el-button link @click="detailVisible = false">← 返回</el-button><h2>{{ detailRow.task_name }}</h2><el-tag :type="statusTagType(currentStatus)">{{ TASK_STATUS_LABEL[currentStatus] || currentStatus }}</el-tag></div>
+          <el-button @click="loadDetail">刷新</el-button>
+        </div>
+        <h3>核心进度</h3>
         <div class="section-gap">
           <div class="metric">
             <span>已发送</span>
             <el-progress
-              :percentage="currentSent ? 100 : 0"
+              :percentage="detailProgress?.progress || 0"
               :show-text="false"
               :stroke-width="14"
             />
-            <b>{{ currentSent }}</b>
+            <b>{{ currentSent }} / {{ detailProgress?.targets ?? '—' }}</b>
           </div>
           <div class="metric">
             <span>已送达</span>
@@ -212,6 +190,23 @@
           </div>
         </div>
 
+        <el-alert v-if="detailProgress?.last_error" :title="detailProgress.last_error" type="error" :closable="false" class="section-gap" />
+        <p class="muted">执行模式：{{ detailProgress?.mode === 'mock' ? '模拟（不会发送真实消息）' : detailProgress?.mode === 'real' ? '真实' : '历史数据' }} · 发送成功 {{ detailProgress?.accepted ?? '—' }} · 失败 {{ detailProgress?.failed ?? '—' }}</p>
+        <h3>任务信息</h3>
+        <el-descriptions v-if="detailRow" :column="1" border>
+          <el-descriptions-item label="任务 ID">{{ detailRow.id }}</el-descriptions-item>
+          <el-descriptions-item label="任务名称">{{ detailRow.task_name }}</el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <el-tag :type="statusTagType(currentStatus)" size="small">
+              {{ TASK_STATUS_LABEL[currentStatus] || currentStatus }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="执行账号">{{ detailProgress?.account_ids.join(', ') || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="消息内容">{{ detailProgress?.message_content || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="计划发送">{{ formatDateTime(detailProgress?.scheduled_at) }}</el-descriptions-item>
+          <el-descriptions-item label="创建时间">{{ formatDateTime(detailRow.created_at) }}</el-descriptions-item>
+        </el-descriptions>
+
         <el-alert
           class="section-gap"
           :closable="false"
@@ -225,17 +220,21 @@
           show-icon
           title="「已点击」指标需后端补充点击追踪字段后展示。"
         />
-      </div>
+        <TaskExecutionPanel v-if="detailVisible && detailRow" kind="mass-send" :task-id="detailRow.id" :status="currentStatus" @changed="loadDetail(); loadTasks()" />
+      </PageTemplate>
     </el-drawer>
-  </div>
+  </PageTemplate>
 </template>
 
 <script setup lang="ts">
+import TaskExecutionPanel from '@/components/TaskExecutionPanel.vue'
+import PageTemplate from '@/components/PageTemplate.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { accountApi, massSendApi } from '@/api'
+import { workspaceApi, type ResourceCollection } from '@/api/workspace'
 import type { AccountItem, MassSendProgress, MassSendTaskRow } from '@/types/api'
 import { TASK_STATUS_LABEL, formatDateTime, parseIdList, statusTagType } from '@/utils/format'
 
@@ -253,6 +252,8 @@ watch(() => route.query.create, (value) => {
 }, { immediate: true })
 const loading = ref(false)
 const accounts = ref<AccountItem[]>([])
+const accountGroups=ref<ResourceCollection[]>([]),accountGroup=ref<number>()
+function selectAccountGroup(){form.account_ids=accounts.value.filter(a=>a.status==='normal'&&(!accountGroup.value||a.group_id===accountGroup.value)).map(a=>a.id)}
 
 const tasks = ref<MassSendTaskRow[]>([])
 const total = ref(0)
@@ -267,10 +268,11 @@ const form = reactive({
   account_ids: [] as number[],
   message_content: '',
   link_url: '',
-  strategy: 'ai',
+  billing_country: '',
   scheduled_at: null as string | null,
 })
 
+const billingCountries = ['CN', 'US', 'GB', 'BR', 'ID', 'IN', 'MX', 'RU']
 const rules: FormRules = {
   task_name: [{ required: true, message: '请输入任务名称', trigger: 'blur' }],
   message_content: [{ required: true, message: '请输入消息内容', trigger: 'blur' }],
@@ -368,6 +370,8 @@ async function submit() {
       account_ids: form.account_ids,
       message_content: form.message_content,
       link_url: form.link_url,
+      scheduled_at: form.scheduled_at || undefined,
+      billing_country: form.billing_country || undefined,
     })
     createVisible.value = false
     ElMessage.success(`任务已创建，ID: ${res.task_id}`)
@@ -427,6 +431,7 @@ function stopPolling() {
 
 onMounted(async () => {
   accounts.value = await accountApi.list().catch(() => [])
+  accountGroups.value = await workspaceApi.groups('account').catch(()=>[])
   await loadTasks()
   startPolling()
 })

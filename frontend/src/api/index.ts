@@ -1,5 +1,6 @@
 import { request } from './request'
 import type {
+  TaskExecutionRow, TaskLogRow, ServiceConfigField, ServiceHealth,
   WhatsAppRegisterResult,
   WhatsAppSessionsResult,
   WhatsAppStatus,
@@ -107,6 +108,12 @@ export const registerApi = {
 
 /** 账号 —— /api/v1/accounts */
 export const accountApi = {
+  logs(id: number, params: { page: number; size: number }) { return request<PageResult<TaskLogRow>>({ url: `/accounts/${id}/logs`, method: 'get', params }) },
+  assignProxy(id: number, proxy_id: number) { return request<{ message: string }>({ url: `/accounts/${id}/proxy`, method: 'post', data: { proxy_id } }) },
+  remove(id: number) { return request<{ deleted: number }>({ url: `/accounts/${id}`, method: 'delete' }) },
+  convert(id: number) { return request<{ account_id: number; files: number }>({ url: `/accounts/${id}/convert`, method: 'post' }) },
+  convertMany(ids: number[]) { return request<{ converted: { account_id: number }[]; failures: { id: number; reason: string }[] }>({ url: '/accounts/convert', method: 'post', data: { ids } }) },
+  export(ids: number[]) { return request<Blob>({ url: '/accounts/export', method: 'post', data: { ids }, responseType: 'blob', timeout: 120000 }) },
   list() {
     return request<AccountItem[]>({ url: '/accounts', method: 'get' })
   },
@@ -147,6 +154,15 @@ export const massSendApi = {
 
 /** 资源群 —— GET /api/v1/groups */
 export const groupApi = {
+  import(items: { group_name: string; group_jid: string; source_channel?: string; owner_account_id?: number }[]) {
+    return request<{ added: number; updated: number }>({ url: '/groups/import', method: 'post', data: items })
+  },
+  export(query: { keyword?: string; status?: string } = {}) {
+    return request<GroupRow[]>({ url: '/groups/export', method: 'get', params: query })
+  },
+  remove(ids: number[]) {
+    return request<{ count: number }>({ url: '/groups', method: 'delete', data: { ids } })
+  },
   list(query: { page?: number; size?: number; keyword?: string; status?: string } = {}) {
     return request<PageResult<GroupRow>>({
       url: '/groups',
@@ -155,7 +171,7 @@ export const groupApi = {
     })
   },
   fetchLinks(ids: number[]) {
-    return request<{ updated: number; message: string }>({
+    return request<{ updated: number; message: string; failures: { id: number; reason: string }[] }>({
       url: '/groups/fetch-links',
       method: 'post',
       data: { ids },
@@ -363,11 +379,15 @@ export const authApi = {
 
 /** 资源对接 —— /api/v1/providers、/proxies、/sms、/purchase */
 export const integrationApi = {
+  config() { return request<ServiceConfigField[]>({ url: '/providers/config', method: 'get' }) },
+  saveConfig(data: Record<string, string>) { return request<ServiceConfigField[]>({ url: '/providers/config', method: 'put', data }) },
+  health() { return request<ServiceHealth>({ url: '/providers/health', method: 'get' }) },
+  checkHealth() { return request<ServiceHealth>({ url: '/providers/health', method: 'post', timeout: 120000 }) },
   /** 供应商（接码 / 代理 / 账号采购 / 发消息通道）状态汇总 */
   status() {
     return request<ProvidersStatus>({ url: '/providers/status', method: 'get' })
   },
-  listProxies(query: { page?: number; size?: number; status?: string; country?: string } = {}) {
+  listProxies(query: { page?: number; size?: number; status?: string; country?: string; proxy_type?: string; group_id?: number } = {}) {
     return request<PageResult<ProxyRow>>({ url: '/proxies', method: 'get', params: query })
   },
   syncProxies(payload: { limit?: number; country?: string } = {}) {
@@ -377,7 +397,7 @@ export const integrationApi = {
       data: payload,
     })
   },
-  importProxies(payload: { text: string; country?: string }) {
+  importProxies(payload: { text: string; country?: string; proxy_type?: string; group_id?: number }) {
     return request<{ added: number; skipped: number }>({
       url: '/proxies/import',
       method: 'post',
@@ -392,6 +412,12 @@ export const integrationApi = {
   },
   releaseProxy(id: number) {
     return request<ProxyRow>({ url: `/proxies/${id}/release`, method: 'post' })
+  },
+  defaultProxy(id: number) {
+    return request<ProxyRow>({ url: `/proxies/${id}/default`, method: 'post' })
+  },
+  editProxy(id: number, text: string) {
+    return request<ProxyRow>({ url: `/proxies/${id}`, method: 'put', data: { text } })
   },
   listSmsOrders(query: { page?: number; size?: number; status?: string } = {}) {
     return request<PageResult<SmsOrderRow>>({ url: '/sms/orders', method: 'get', params: query })
@@ -442,8 +468,8 @@ export const integrationApi = {
 
 /** 面板内扫码登录 WhatsApp —— /api/v1/whatsapp/* */
 export const whatsappApi = {
-  status() {
-    return request<WhatsAppStatus>({ url: '/whatsapp/status', method: 'get' })
+  status(authName = '') {
+    return request<WhatsAppStatus>({ url: '/whatsapp/status', method: 'get', params: { auth_name: authName } })
   },
   /** 本机已有的登录态目录及其对应账号 */
   sessions() {
@@ -462,7 +488,7 @@ export const whatsappApi = {
       timeout: 120000,
     })
   },
-  /** 切换到某个账号的会话（同一时间只能有一个会话） */
+  /** 选择账号会话，其他账号继续在线 */
   switchAccount(accountId: number) {
     return request<WhatsAppStatus>({
       url: '/whatsapp/switch',
@@ -479,14 +505,34 @@ export const whatsappApi = {
       data: { auth_name: authName },
     })
   },
-  stop() {
-    return request<WhatsAppStatus>({ url: '/whatsapp/stop', method: 'post' })
+  stop(authName = '') {
+    return request<WhatsAppStatus>({ url: '/whatsapp/stop', method: 'post', data: { auth_name: authName } })
   },
   /** 把扫码登录的号登记进号码池 / 账号池 */
-  registerAccount() {
+  registerAccount(authName = '') {
     return request<WhatsAppRegisterResult>({
       url: '/whatsapp/register-account',
-      method: 'post',
+      method: 'post', data: { auth_name: authName },
     })
   },
+}
+
+export const taskApi = {
+  resolve(kind: string, id: number, executionId: number, data: { status: string; note: string; message_id?: string }) {
+    return request<unknown>({ url: `/tasks/${kind}/${id}/executions/${executionId}`, method: 'patch', data })
+  },
+  executions(kind: string, id: number, params: { page: number; size: number }) {
+    return request<PageResult<TaskExecutionRow>>({ url: `/tasks/${kind}/${id}/executions`, method: 'get', params })
+  },
+  logs(kind: string, id: number, params: { page: number; size: number }) {
+    return request<PageResult<TaskLogRow>>({ url: `/tasks/${kind}/${id}/logs`, method: 'get', params })
+  },
+  control(kind: string, id: number, action: string) {
+    return request<unknown>({ url: `/tasks/${kind}/${id}/${action}`, method: 'post' })
+  },
+}
+
+export const resourceApi = {
+  overview() { return request<import('@/types/api').ResourcePlatformOverview[]>({ url: '/resources/overview', method: 'get' }) },
+  accessTasks(params: { page: number; size: number; keyword?: string; status?: string }) { return request<PageResult<import('@/types/api').AccessTaskRow>>({ url: '/resources/access-tasks', method: 'get', params }) },
 }

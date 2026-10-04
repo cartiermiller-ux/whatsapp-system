@@ -88,7 +88,7 @@ class WsapiMessageProvider(MessageProvider):
         self.text_field = options.get("text_field") or env("WSAPI_TEXT_FIELD", "message")
         self.success_field = options.get("success_field") or env("WSAPI_SUCCESS_FIELD", "success")
         self.extra_body: Dict[str, Any] = options.get("extra_body") or {}
-        self.http = HttpClient("", timeout=float(env("WSAPI_TIMEOUT", "30")), provider=self.name)
+        self.http = HttpClient("", timeout=float(env("WSAPI_TIMEOUT", "30")), retries=0, provider=self.name)
 
     def is_configured(self) -> bool:
         return bool(self.url)
@@ -99,30 +99,32 @@ class WsapiMessageProvider(MessageProvider):
         return True, ""
 
     def send(self, chat_jid: str, message: str) -> Tuple[bool, str]:
-        if not self.is_configured():
-            return False, "未设置 WSAPI_URL"
-        if not chat_jid:
-            return False, "缺少 chat id"
-        if not message:
-            return False, "消息内容为空"
-        headers: Dict[str, str] = {}
-        if self.token:
-            headers[self.auth_header] = f"{self.auth_prefix}{self.token}"
+        result = self.send_result(chat_jid, message)
+        return bool(result["success"]), result.get("message", "")
+
+    def send_result(self, chat_jid: str, message: str) -> Dict[str, Any]:
+        if not self.is_configured() or not chat_jid or not message:
+            return {"success": False, "message": "未设置消息 API 或消息目标、内容为空"}
+        headers = {self.auth_header: f"{self.auth_prefix}{self.token}"} if self.token else {}
         body = dict(self.extra_body)
-        body[self.chat_field] = chat_jid
-        body[self.text_field] = message
+        body[self.chat_field], body[self.text_field] = chat_jid, message
         try:
             payload = self.http.post(self.url, body=body, headers=headers)
         except ProviderError as exc:
-            return False, str(exc)
-        if isinstance(payload, dict):
-            flag = payload.get(self.success_field)
-            if flag is None:                       # 有些服务只回 code/status
-                flag = str(payload.get("code", payload.get("status", "0"))) in ("0", "200", "ok", "OK")
-            if flag:
-                return True, ""
-            return False, str(payload.get("message") or payload.get("error") or "接口返回失败")
-        return True, ""
+            return {"success": False, "uncertain": exc.status is None or exc.status >= 500,
+                    "message": "消息 API 请求失败，请检查通道执行记录"}
+        if not isinstance(payload, dict):
+            return {"success": False, "uncertain": True, "message": "消息 API 响应格式无法确认"}
+        flag = payload.get(self.success_field)
+        if flag is None:
+            flag = str(payload.get("code", payload.get("status", ""))) in ("0", "200", "ok", "OK")
+        else:
+            flag = flag is True or str(flag).lower() in ("1", "true", "ok", "success")
+        message_id = payload
+        for part in env("WSAPI_MESSAGE_ID_FIELD", "message_id").split("."):
+            message_id = message_id.get(part) if isinstance(message_id, dict) else None
+        return {"success": bool(flag), "message": "" if flag else "消息 API 返回失败",
+                "message_id": str(message_id or "")}
 
     def status(self) -> ProviderStatus:
         return ProviderStatus(

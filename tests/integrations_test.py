@@ -10,11 +10,11 @@ import sys
 import threading
 import time
 
-DB_FILE = os.path.join("tests", ".tmp", "integrations_test.db")
+DB_FILE = os.path.abspath(os.path.join(os.environ.get("WHATSAPP_TEST_TMP_DIR", os.path.join("tests", ".tmp")), "integrations_test.db"))
 os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
 if os.path.exists(DB_FILE):
     os.remove(DB_FILE)
-os.environ["WHATSAPP_DATABASE_URL"] = "sqlite:///./" + DB_FILE
+os.environ["WHATSAPP_DATABASE_URL"] = "sqlite:///" + DB_FILE
 os.environ["MESSAGE_PROVIDER"] = "mock"
 sys.path.insert(0, os.getcwd())
 

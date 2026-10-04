@@ -65,6 +65,7 @@ body { font-family:var(--wa-font-family); background:var(--wa-bg); color:var(--w
 .el-table .el-table__cell { padding:7px 0; }
 .el-table--small .el-table__cell { padding:5px 0; }
 .el-dialog,.el-message-box { border-radius:12px; max-width:calc(100vw - 24px); }
+.el-message-box { width:420px; }
 .el-tag { border-radius:5px; }
 .el-menu { border-right:none !important; }
 .el-avatar { --el-avatar-bg-color:#ececec; color:#525252; }

@@ -244,7 +244,7 @@ while time.time() < deadline:
 final = session3.snapshot()
 check("状态为 closed", final["status"] == "closed", final["status"])
 check("错误信息含 408", "408" in final["last_error"], final["last_error"])
-check("错误信息指向排障文档", "TROUBLESHOOTING" in final["last_error"], final["last_error"])
+check("错误信息指向出口配置且不要求解绑", "默认出口" in final["last_error"] and "无需解绑" in final["last_error"], final["last_error"])
 session3.stop()
 
 print()

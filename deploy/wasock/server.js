@@ -68,22 +68,21 @@ function config(name, fallback) {
 // https-proxy-agent 已在 wasock 依赖里，HTTP 代理开箱可用。
 const PROXY_URL = String(config("WA_PROXY_URL", "")).trim();
 
-function buildProxyAgent() {
-    if (!PROXY_URL) {
+function buildProxyAgent(proxyUrl = PROXY_URL) {
+    if (!proxyUrl) {
         return null;
     }
     try {
-        if (/^socks/i.test(PROXY_URL)) {
+        if (/^socks/i.test(proxyUrl)) {
             const { SocksProxyAgent } = require("socks-proxy-agent");
-            console.log("[proxy] 已启用 SOCKS5 代理:", PROXY_URL);
-            return new SocksProxyAgent(PROXY_URL);
+            console.log("[proxy] 已启用 SOCKS5 代理");
+            return new SocksProxyAgent(proxyUrl);
         }
         const { HttpsProxyAgent } = require("https-proxy-agent");
-        console.log("[proxy] 已启用 HTTP 代理:", PROXY_URL);
-        return new HttpsProxyAgent(PROXY_URL);
+        console.log("[proxy] 已启用 HTTP 代理");
+        return new HttpsProxyAgent(proxyUrl);
     } catch (err) {
-        console.error("[proxy] 初始化失败，将直连:", err.message);
-        return null;
+        throw new Error("代理初始化失败，请检查代理配置与依赖");
     }
 }
 
@@ -170,91 +169,140 @@ async function resolveBaileysVersion() {
     }
 }
 
-var loggerLevel = "silent";
-var authName = "auth";
-var browserInfo = ["ubuntu", "Chrome", "14.4.1"];
-var syncFullHistory = false;
-
-var globalSocket;
-
+// Each auth directory owns one connection, receipt store and event subscribers.
+const sessions = new Map();
 function send(socket, message) {
-    socket.write(JSON.stringify(message) + "\n");
+    if (!socket.destroyed) socket.write(JSON.stringify(message) + "\n");
 }
-
-const authPath = path.resolve(authName);
-if (fs.existsSync(authPath) && !isAuthValid(authPath)) {
-    fs.rmSync(authPath, { recursive: true, force: true });
+function publish(entry, message) {
+    for (const client of entry.clients) send(client, { ...message, authName: entry.name });
 }
-
-async function startBaileys(logger, authName, browserInfo, socket) {
-    const { state, saveCreds } = await useMultiFileAuthState(authName);
+function recordReceipt(entry, key, status) {
+    if (!key?.fromMe || !key.id || !key.remoteJid) return;
+    const id = key.remoteJid + ":" + key.id;
+    const previous = entry.receipts[id];
+    if (previous?.status === "read" || previous?.status === status) return;
+    entry.receipts[id] = { message_id: key.id, target: key.remoteJid, status, auth_name: entry.name };
+    const dest = path.join(entry.name, "receipts.json");
+    try {
+        fs.mkdirSync(entry.name, { recursive: true });
+        fs.writeFileSync(dest + ".tmp", JSON.stringify(entry.receipts), { mode: 0o600 });
+        fs.renameSync(dest + ".tmp", dest);
+    } catch { console.error("receipt persistence failed"); }
+}
+function getEntry(message, client, allowMissing = false) {
+    const name = message.authName || client.authName;
+    if (name) {
+        const entry = sessions.get(path.resolve(name));
+        if (!entry && !allowMissing) throw new Error("Account session is not started");
+        return entry;
+    }
+    const connected = [...sessions.values()].filter(entry => entry.sock && !entry.stopped);
+    if (connected.length !== 1) throw new Error("authName is required when multiple account sessions exist");
+    return connected[0];
+}
+function stopEntry(entry) {
+    if (!entry) return;
+    entry.stopped = true;
+    entry.status = "idle";
+    entry.qr = "";
+    clearTimeout(entry.retry); entry.retry = null;
+    if (entry.sock) {
+        entry.sock.ev.removeAllListeners("connection.update");
+        entry.sock.end(new Error("Account session stopped"));
+        entry.sock = null;
+    }
+    publish(entry, { type: "event", event: "connection", status: "stopped" });
+}
+async function connectEntry(entry) {
+    if (entry.stopped) return;
+    const selectedAgent = buildProxyAgent(entry.config.proxyUrl);
+    const { state, saveCreds } = await useMultiFileAuthState(entry.name);
     const version = await resolveBaileysVersion();
-
+    if (entry.stopped) return;
     const sock = makeWASocket({
-        auth: state,
-        logger,
-        version,
-        browser: resolveBrowser(browserInfo, Browsers),
-        syncFullHistory,
-        // 只有配了代理才传，避免给 ws 库塞 null
-        ...(proxyAgent ? { agent: proxyAgent, fetchAgent: proxyAgent } : {}),
+        auth: state, logger: pino({ level: entry.config.loggerLevel }), version,
+        browser: resolveBrowser(entry.config.browserInfo, Browsers),
+        syncFullHistory: entry.config.syncFullHistory,
+        ...(selectedAgent ? { agent: selectedAgent, fetchAgent: selectedAgent } : {}),
     });
-    globalSocket = sock;
-
-    sock.ev.on("creds.update", saveCreds);
-
-    sock.ev.on("connection.update", async (update) => {
+    entry.sock = sock;
+    sock.ev.on("creds.update", () => { if (entry.sock === sock && !entry.stopped) saveCreds(); });
+    sock.ev.on("connection.update", update => {
+        if (entry.sock !== sock || entry.stopped) return;
         const { qr, connection, lastDisconnect } = update;
-
         if (qr) {
-            send(socket, {
-                type: "event",
-                event: "login",
-                qr
-            });
+            entry.status = "waiting_qr"; entry.qr = qr;
+            publish(entry, { type: "event", event: "login", qr });
         }
-
-        switch (connection) {
-            case "open":
-                send(socket, {
-                    type: "event",
-                    event: "connection",
-                    status: "open"
-                });
-                break;
-
-            case "close":
-                const shouldReconnect = lastDisconnect?.error?.output?.statusCode;
-
-                send(socket, {
-                    type: "event",
-                    event: "connection",
-                    status: "close",
-                    reason: lastDisconnect?.error?.message,
-                    statusCode: shouldReconnect
-                });
-
-                if (shouldReconnect !== DisconnectReason.loggedOut) {
-                    await startBaileys(logger, authName, browserInfo, socket);
-                }
-
-                break;
+        if (connection === "open") {
+            entry.status = "connected"; entry.qr = ""; entry.retryCount = 0;
+            publish(entry, { type: "event", event: "connection", status: "open" });
+        } else if (connection === "close") {
+            entry.status = "closed"; entry.sock = null;
+            const statusCode = lastDisconnect?.error?.output?.statusCode;
+            publish(entry, { type: "event", event: "connection", status: "close", statusCode,
+                reason: lastDisconnect?.error?.message });
+            sock.ev.removeAllListeners("connection.update");
+            if (statusCode !== DisconnectReason.loggedOut && !entry.stopped) {
+                entry.retryCount += 1;
+                entry.retry = setTimeout(() => { entry.retry = null; connectEntry(entry).catch(() => {
+                    entry.status = "error";
+                    publish(entry, { type: "event", event: "connection", status: "close", reason: "Account reconnect failed" });
+                }); }, Math.min(30000, 1000 * 2 ** Math.min(entry.retryCount, 5)));
+            }
         }
     });
-
-    sock.ev.on("messages.upsert", (update) => {
-        send(socket, {
-            type: "event",
-            event: "message",
-            message: update
-        });
+    sock.ev.on("messages.update", updates => {
+        if (entry.sock !== sock || entry.stopped) return;
+        for (const { key, update } of updates) {
+            if (update.status >= 4) recordReceipt(entry, key, "read");
+            else if (update.status === 3) recordReceipt(entry, key, "delivered");
+        }
     });
+    sock.ev.on("message-receipt.update", updates => {
+        if (entry.sock !== sock || entry.stopped) return;
+        for (const { key, receipt } of updates) {
+            if (receipt.readTimestamp || receipt.playedTimestamp) recordReceipt(entry, key, "read");
+            else if (receipt.receiptTimestamp) recordReceipt(entry, key, "delivered");
+        }
+    });
+    sock.ev.on("messages.upsert", message => { if (entry.sock === sock && !entry.stopped) publish(entry, { type: "event", event: "message", message }); });
+}
+async function startBaileys(config, client) {
+    const name = path.resolve(config.authName);
+    client.authName = name;
+    let entry = sessions.get(name);
+    if (!entry) {
+        let receipts = {};
+        try { receipts = JSON.parse(fs.readFileSync(path.join(name, "receipts.json"), "utf8")); } catch { }
+        entry = { name, config, receipts, clients: new Set(), sock: null, status: "starting",
+            qr: "", stopped: false, retryCount: 0, pending: null };
+        sessions.set(name, entry);
+    }
+    if ((entry.sock || entry.pending || entry.retry) && entry.config.proxyUrl !== config.proxyUrl) {
+        throw new Error("Stop this account before changing its proxy");
+    }
+    entry.clients.add(client);
+    if (entry.pending) await entry.pending;
+    else if (!entry.sock && !entry.retry) {
+        entry.config = config; entry.stopped = false; entry.status = "starting";
+        entry.pending = connectEntry(entry);
+        try { await entry.pending; }
+        catch (err) { entry.status = "error"; throw err; }
+        finally { entry.pending = null; }
+    } else if (entry.config.proxyUrl !== config.proxyUrl) {
+        throw new Error("Stop this account before changing its proxy");
+    }
+    return entry;
 }
 
 const server = net.createServer((socket) => {
     let buffer = "";
     let processing = false;
-    const queue = [];
+    const settings = { authName: "auth", loggerLevel: "silent", browserInfo: ["ubuntu", "Chrome", "14.4.1"],
+        syncFullHistory: false, proxyUrl: PROXY_URL };
+    socket.on("close", () => { for (const entry of sessions.values()) entry.clients.delete(socket); });
 
     async function processBuffer() {
         if (processing) return;
@@ -276,24 +324,40 @@ const server = net.createServer((socket) => {
             }
 
             if (message.action === "setup") {
-                loggerLevel = message.loggerLevel;
-                authName = message.authName;
-                syncFullHistory = message.syncFullHistory;
-                browserInfo = message.browserInfo;
-                send(socket, { type: "response", success: true, message: "" });
+                settings.loggerLevel = message.loggerLevel || "silent";
+                settings.authName = message.authName || "auth";
+                settings.proxyUrl = message.proxyUrl === undefined ? PROXY_URL : String(message.proxyUrl || "");
+                settings.syncFullHistory = Boolean(message.syncFullHistory);
+                settings.browserInfo = message.browserInfo || ["ubuntu", "Chrome", "14.4.1"];
+                socket.authName = path.resolve(settings.authName);
+                send(socket, { type: "response", success: true, message: "", multi_session: true });
             }
 
             if (message.action === "start") {
-                await startBaileys(pino({ level: loggerLevel }), authName, browserInfo, socket);
-                send(socket, { type: "response", success: true, message: "" });
+                try {
+                    const entry = await startBaileys(settings, socket);
+                    send(socket, { type: "response", success: true, message: "", status: entry.status, qr: entry.qr });
+                } catch (err) { send(socket, { type: "response", success: false, message: err.message }); }
             }
 
+            if (message.action === "capabilities") {
+                send(socket, { type: "response", success: true, multi_session: true, protocol_version: 2 });
+            }
+            if (message.action === "stop") {
+                try { stopEntry(getEntry(message, socket, true)); send(socket, { type: "response", success: true }); }
+                catch (err) { send(socket, { type: "response", success: false, message: err.message }); }
+            }
+            if (message.action === "listSessions") {
+                send(socket, { type: "response", success: true, sessions: [...sessions.values()].map(entry => ({ auth_name: entry.name, status: entry.status })) });
+            }
             if (message.action === "replyMessage") {
                 try {
-                    if (!globalSocket) throw new Error("Not connected");
+                    const entry = getEntry(message, socket);
+                    const accountSocket = entry.sock;
+                    if (!accountSocket || entry.status !== "connected") throw new Error("Account is not connected");
                     if (!message.chat) throw new Error("chat is required");
 
-                    await globalSocket.sendMessage(
+                    await accountSocket.sendMessage(
                         message.chat,
                         { text: message.msg },
                         { quoted: message.quoted }
@@ -307,22 +371,55 @@ const server = net.createServer((socket) => {
 
             if (message.action === "sendMessage") {
                 try {
-                    if (!globalSocket) throw new Error("Not connected");
-                    await globalSocket.sendMessage(
+                    const entry = getEntry(message, socket);
+                    const accountSocket = entry.sock;
+                    if (!accountSocket || entry.status !== "connected") throw new Error("Account is not connected");
+                    const result = await accountSocket.sendMessage(
                         message.chat,
                         { text: message.msg },
                     );
-                    send(socket, { type: "response", success: true, message: "" });
+                    send(socket, { type: "response", success: true, message: "", message_id: result?.key?.id || "" });
                 } catch (err) {
                     console.error("sendMessage error:", err);
                     send(socket, { type: "response", success: false, message: err.message });
                 }
             }
 
+            if (message.action === "addParticipants") {
+                try {
+                    const entry = getEntry(message, socket);
+                    const accountSocket = entry.sock;
+                    if (!accountSocket || entry.status !== "connected") throw new Error("Account is not connected");
+                    const results = await accountSocket.groupParticipantsUpdate(message.chat, message.participants, "add");
+                    const success = results.length > 0 && results.every(item => String(item.status) === "200");
+                    send(socket, { type: "response", success, results,
+                        message: success ? "" : "拉群未成功：" + results.map(item => item.status).join(", ") });
+                } catch (err) { send(socket, { type: "response", success: false, message: err.message }); }
+            }
+            if (message.action === "groupInviteCode") {
+                try {
+                    const entry = getEntry(message, socket);
+                    const accountSocket = entry.sock;
+                    if (!accountSocket || entry.status !== "connected") throw new Error("Account is not connected");
+                    const code = await accountSocket.groupInviteCode(message.chat);
+                    send(socket, { type: "response", success: Boolean(code), code, message: code ? "" : "无法获取群链接" });
+                } catch (err) { send(socket, { type: "response", success: false, message: err.message }); }
+            }
+            if (message.action === "getReceipts") {
+                const selected = message.authName ? [sessions.get(path.resolve(message.authName))].filter(Boolean) : [...sessions.values()];
+                const all = selected.flatMap(entry => Object.values(entry.receipts).map(receipt => ({ ...receipt, auth_name: entry.name })));
+                const offset = Math.max(0, Number(message.offset) || 0);
+                const limit = Math.min(500, Math.max(1, Number(message.limit) || 500));
+                send(socket, { type: "response", success: true, receipts: all.slice(offset, offset + limit),
+                    next_offset: offset + limit < all.length ? offset + limit : null });
+            }
+
             if (message.action === "deleteMessage") {
                 try {
-                    if (!globalSocket) throw new Error("Not connected");
-                    await globalSocket.sendMessage(
+                    const entry = getEntry(message, socket);
+                    const accountSocket = entry.sock;
+                    if (!accountSocket || entry.status !== "connected") throw new Error("Account is not connected");
+                    await accountSocket.sendMessage(
                         message.chat,
                         { delete: message.key },
                     );
@@ -351,14 +448,16 @@ const server = net.createServer((socket) => {
 
             if (message.action === "requestPairCode") {
                 try {
-                    if (!globalSocket) throw new Error("Not connected");
-                    if (globalSocket.authState.creds.registered) {
+                    const entry = getEntry(message, socket);
+                    const accountSocket = entry.sock;
+                    if (!accountSocket) throw new Error("Account is not started");
+                    if (accountSocket.authState.creds.registered) {
                         throw new Error("Already registered, no need for pairing code");
                     }
                     
                     const code = message.customPairingCode
-                        ? await globalSocket.requestPairingCode(message.phoneNumber, message.customPairingCode)
-                        : await globalSocket.requestPairingCode(message.phoneNumber);
+                        ? await accountSocket.requestPairingCode(message.phoneNumber, message.customPairingCode)
+                        : await accountSocket.requestPairingCode(message.phoneNumber);
 
                     send(socket, { type: "response", success: true, message: "", code });
                 } catch (err) {
@@ -380,6 +479,6 @@ const server = net.createServer((socket) => {
 // 端口可用 WA_PORT 覆盖（默认 5000，与 wasock 保持一致）
 const PORT = Number(config("WA_PORT", "5000") || 5000);
 
-server.listen(PORT, () => {
+server.listen(PORT, "127.0.0.1", () => {
     console.log("Server running on " + PORT + " port");
 });

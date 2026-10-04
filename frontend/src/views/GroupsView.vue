@@ -1,15 +1,15 @@
 <template>
-  <div class="page">
+  <PageTemplate kind="list">
     <div class="page-header">
       <div>
-        <h2>资源群管理</h2>
-        <div class="sub">群列表 · 营销价值分排序 · 群链接</div>
+        <h2>群资源</h2>
+        <div class="sub">管理账号接入后的运营群资源与邀请链接</div>
       </div>
-      <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
+      <div class="actions"><el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button><el-button @click="exportGroups">导出</el-button><el-button type="primary" @click="importVisible = true">导入资源群</el-button></div>
     </div>
 
 
-    <el-card shadow="never">
+    <section>
       <div class="filter-bar">
         <el-input
           v-model="filters.keyword"
@@ -38,10 +38,12 @@
         >
           批量获取群链接{{ selectedIds.length ? `(${selectedIds.length})` : '' }}
         </el-button>
+        <el-button type="danger" plain @click="removeGroups">删除所选</el-button>
       </div>
       <el-table v-loading="loading" :data="rows" stripe @selection-change="onSelectionChange">
         <el-table-column type="selection" width="46" />
         <el-table-column prop="id" label="ID" width="70" />
+        <el-table-column label="来源平台" min-width="120"><template #default="{ row }">{{ row.source_channel || '未标注来源' }}</template></el-table-column>
         <el-table-column prop="group_name" label="群名称" min-width="160" show-overflow-tooltip />
         <el-table-column prop="group_jid" label="群 JID" min-width="170" class-name="mono" show-overflow-tooltip />
         <el-table-column label="群链接" min-width="180" show-overflow-tooltip>
@@ -97,7 +99,7 @@
           </template>
         </el-table-column>
         <template #empty>
-          <el-empty description="暂无资源群，可先用「批量获取群链接」或从已加入的群里采集" />
+          <el-empty description="暂无群资源，请导入已有群的 JID 与名称" />
         </template>
       </el-table>
 
@@ -113,25 +115,22 @@
           @size-change="onSizeChange"
         />
       </div>
-    </el-card>
+    </section>
 
-    <el-alert
-      class="section-gap"
-      type="info"
-      :closable="false"
-      show-icon
-      title="群资源导入、导出、删除及更多筛选条件暂未开放。"
-    />
-  </div>
+    <el-alert v-if="linkFailures.length" type="warning" :closable="false" title="部分群链接获取失败" :description="linkFailures.map(item => `#${item.id}：${item.reason}`).join('；')" class="section-gap" />
+    <el-dialog v-model="importVisible" title="导入资源群" width="560px"><el-input v-model="importSource" placeholder="来源平台（可选）" class="block-gap" /><el-select v-model="importAccount" placeholder="所属 WhatsApp 账号（获取群链接时使用）" clearable style="width:100%;margin-top:12px"><el-option v-for="account in accounts.filter(a => a.session_name)" :key="account.id" :value="account.id" :label="`WA-${String(account.id).padStart(3, '0')}`" /></el-select><p class="muted">每行填写“群 JID, 群名称”，也可粘贴导出的 JSON 数组。</p><el-input v-model="importText" type="textarea" :rows="8" placeholder="12345@g.us, 测试资源群" /><template #footer><el-button @click="importVisible = false">取消</el-button><el-button type="primary" :loading="importing" @click="importGroups">导入</el-button></template></el-dialog>
+  </PageTemplate>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import PageTemplate from '@/components/PageTemplate.vue'
+import { onActivated, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Link, Refresh, Search } from '@element-plus/icons-vue'
-import { groupApi } from '@/api'
-import type { GroupRow } from '@/types/api'
+import { groupApi, accountApi } from '@/api'
+import type { GroupRow, AccountItem } from '@/types/api'
 
+const emit = defineEmits<{ changed: [] }>()
 const loading = ref(false)
 const rows = ref<GroupRow[]>([])
 const total = ref(0)
@@ -142,6 +141,28 @@ const filters = reactive({ keyword: '', status: '' })
 
 const selectedIds = ref<number[]>([])
 const fetching = ref(false)
+const importVisible = ref(false), importing = ref(false), importText = ref('')
+const importSource = ref('')
+const importAccount = ref<number>(), accounts = ref<AccountItem[]>([])
+const linkFailures = ref<{ id: number; reason: string }[]>([])
+async function importGroups() {
+  let items: { group_jid: string; group_name: string; source_channel?: string; owner_account_id?: number }[]
+  try {
+    items = importText.value.trim().startsWith('[') ? JSON.parse(importText.value) : importText.value.split(/\r?\n/).filter(line => line.trim()).map(line => { const [group_jid, ...name] = line.split(/[,，\t]/); return { group_jid: group_jid!.trim(), group_name: name.join(',').trim() } })
+    if (!Array.isArray(items) || !items.length) throw new Error()
+  } catch { ElMessage.error('导入格式不正确'); return }
+  importing.value = true
+  try { const result = await groupApi.import(items.map(item => ({ ...item, source_channel: item.source_channel || importSource.value, ...(item.owner_account_id || importAccount.value ? { owner_account_id: item.owner_account_id || importAccount.value } : {}) }))); ElMessage.success(`新增 ${result.added} 个，更新 ${result.updated} 个`); importVisible.value = false; importText.value = ''; reload(); emit('changed') } finally { importing.value = false }
+}
+async function exportGroups() {
+  const result = await groupApi.export({ keyword: filters.keyword || undefined, status: filters.status || undefined })
+  const url = URL.createObjectURL(new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' }))
+  const anchor = document.createElement('a'); anchor.href = url; anchor.download = '资源群.json'; anchor.click(); URL.revokeObjectURL(url)
+}
+async function removeGroups() {
+  try { await ElMessageBox.confirm(`确认删除 ${selectedIds.value.length} 个资源群？`, '删除资源群', { type: 'warning' }) } catch { return }
+  const result = await groupApi.remove(selectedIds.value); ElMessage.success(`已删除 ${result.count} 个`); selectedIds.value = []; reload(); emit('changed')
+}
 
 function onSelectionChange(rows: GroupRow[]) {
   selectedIds.value = rows.map((r) => r.id)
@@ -152,7 +173,10 @@ async function fetchLinks() {
   fetching.value = true
   try {
     const res = await groupApi.fetchLinks(selectedIds.value)
-    ElMessage.success(res.message || `已处理 ${selectedIds.value.length} 个群`)
+    linkFailures.value = res.failures || []
+    if (res.failures?.length) ElMessage.warning(res.message)
+    else ElMessage.success(res.message)
+    await load()
   } finally {
     fetching.value = false
   }
@@ -200,7 +224,7 @@ function resetFilters() {
 }
 
 
-onMounted(load)
+onActivated(async () => { load(); accounts.value = await accountApi.list(); emit('changed') })
 </script>
 
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <PageTemplate kind="settings">
     <div class="page-header">
       <div>
         <h2>系统设置</h2>
@@ -8,7 +8,8 @@
       <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
     </div>
 
-    <el-tabs v-model="activeTab">
+    <el-tabs v-model="activeTab" tab-position="left" class="settings-tabs">
+      <el-tab-pane label="服务与通道" name="services"><ServiceChannels v-if="activeTab === 'services'" /></el-tab-pane>
       <el-tab-pane label="全局参数" name="params">
         <el-card shadow="never" v-loading="loading">
           <el-alert
@@ -240,10 +241,11 @@
         <el-button type="primary" :loading="savingUser" @click="submitUser">保存</el-button>
       </template>
     </el-dialog>
-  </div>
+  </PageTemplate>
 </template>
 
 <script setup lang="ts">
+import PageTemplate from '@/components/PageTemplate.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search, Plus } from '@element-plus/icons-vue'
@@ -256,6 +258,8 @@ import {
   formatDateTime,
   statusTagType,
 } from '@/utils/format'
+import { useRoute } from 'vue-router'
+import ServiceChannels from '@/components/ServiceChannels.vue'
 import PlaceholderPanel from '@/components/PlaceholderPanel.vue'
 
 const auth = useAuthStore()
@@ -266,7 +270,9 @@ const CATEGORY_LABEL: Record<string, string> = {
   general: '通用',
 }
 
-const activeTab = ref('params')
+const route = useRoute()
+const activeTab = ref(route.query.tab === 'services' ? 'services' : 'params')
+watch(() => route.query.tab, tab => { if (tab === 'services') activeTab.value = 'services' })
 const loading = ref(false)
 const saving = ref(false)
 const savedAt = ref('')

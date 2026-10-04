@@ -1,9 +1,9 @@
 # 测试脚本
 
-所有脚本都用标准库 + `requests`，不需要 pytest。**请在仓库根目录执行**（脚本会 `import main`）。
+脚本使用标准库、项目依赖及 `requests` / `httpx`，不需要 pytest。**请在仓库根目录执行**（脚本会 `import main`）。
 
 ```powershell
-pip install requests
+pip install -r requirements.txt requests httpx
 ```
 
 ## 1. 发送逻辑自测（不需要联网、不需要起服务）
@@ -20,7 +20,7 @@ python tests/real_send_test.py
 - **业务层**：目标解析（含 `resource_group.id` 与 `number_pool.id` 冲突的场景）、文案变量渲染、
   失败重试、计数与 TaskLog、五条前置校验分支、`USE_REAL_SEND` 分流、发送间隔取值、登录态判定
 
-共 **61 项断言**。临时库写在 `tests/.tmp/`，不会碰 `whatsapp.db`，也不连真实 WhatsApp。
+共 **62 项断言**。临时库写在 `tests/.tmp/`，不会碰 `whatsapp.db`，也不连真实 WhatsApp。
 
 ## 2. 第三方对接自测（不需要联网、不需要密钥）
 
@@ -41,7 +41,7 @@ python tests/whatsapp_session_test.py
 
 用一个假 Node 服务复刻 `wasock/node/server.js` 的协议，覆盖 setup/start 握手、
 二维码事件转 data URL、连接状态流转、408 断开时的可操作提示、setup 被拒绝、
-以及登录态解析（`creds.json` 的 `me.id`）。共 **22 项断言**，不连真实 WhatsApp。
+以及登录态解析（`creds.json` 的 `me.id`）。共 **35 项断言**，不连真实 WhatsApp。
 
 ## 4. 接口回归（P2 模块，109 项断言）
 
@@ -77,3 +77,21 @@ python tests/wa_net_diag.py
 
 会连续解析 `web.whatsapp.com`、逐个 IP 测 443 连通性，并检测本机代理端口
 （常见的 10808/10809）。判定依据见 `docs/TROUBLESHOOTING.md`。
+
+## 运营接口回归
+
+```bash
+python tests/operations_test.py
+```
+
+覆盖账号展示与代理分配、任务执行/调度/暂停/恢复/取消、失败目标重试、结果不确定时人工核对、回执单调更新、完整会话 ZIP、服务配置脱敏、资源群导入导出与删除、成功目标计费、签名到账回调及防重复入账。使用自动清理的独立临时数据库与会话目录，不访问真实 WhatsApp。
+
+WSL 下旧脚本可设置 `WHATSAPP_TEST_TMP_DIR=/tmp/whatsapp-regression`，避免 Windows 挂载目录中的 SQLite 锁问题。
+
+## 多账号通道隔离
+
+```bash
+node tests/multi_session_node_test.cjs
+```
+
+运行真实 server.js 指令处理逻辑，使用内存 Baileys 替身验证双账号同时上线、指令指定账号、共享账号连接复用、消息事件和回执隔离、停止一个账号不影响另一个。operations_test.py 同时覆盖两个操作者的二维码隔离和独立当前选择、跨账号并发任务及消息 ID 冲突时的回执归属。均不访问 WhatsApp。

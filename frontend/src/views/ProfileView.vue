@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <PageTemplate kind="settings">
     <div class="page-header">
       <div>
         <h2>个人中心</h2>
@@ -126,10 +126,11 @@
     </el-card>
       </el-tab-pane>
     </el-tabs>
-  </div>
+  </PageTemplate>
 </template>
 
 <script setup lang="ts">
+import PageTemplate from '@/components/PageTemplate.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'

@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <PageTemplate kind="list">
     <div class="page-header">
       <div>
         <h2>拉群任务</h2>
@@ -77,7 +77,7 @@
             </el-form-item>
             <el-form-item label="拉人来源">
               <el-radio-group v-model="form.source_type">
-                <el-radio-button value="number_pool">号码池</el-radio-button>
+                <el-radio-button value="number_pool">号码资源</el-radio-button>
                 <el-radio-button value="contact">联系人</el-radio-button>
               </el-radio-group>
             </el-form-item>
@@ -122,8 +122,18 @@
           </el-form>
     </el-drawer>
 
-    <el-drawer v-model="detailVisible" title="拉群任务详情" size="420px">
-      <div v-loading="detailLoading">
+    <el-drawer v-model="detailVisible" title="拉群任务详情" size="780px">
+      <PageTemplate kind="task-detail" v-loading="detailLoading">
+        <div v-if="detail" class="page-header">
+          <div><el-button link @click="detailVisible = false">← 返回</el-button><h2>{{ detail.task_name }}</h2><el-tag :type="statusTagType(detail.status)">{{ TASK_STATUS_LABEL[detail.status] || detail.status }}</el-tag></div>
+          <el-button @click="loadDetail">刷新</el-button>
+        </div>
+        <h3>核心进度</h3>
+        <el-progress :percentage="detail?.progress || 0" />
+        <p>已处理 {{ detail?.processed || 0 }} / {{ detail?.targets || 0 }} · 成功 {{ detail?.succeeded || 0 }} · 失败 {{ detail?.failed || 0 }}</p>
+        <p class="muted">执行模式：{{ detail?.mode === 'mock' ? '模拟（不会添加真实成员）' : detail?.mode === 'real' ? '真实' : '历史数据' }}</p>
+        <el-alert v-if="detail?.last_error" :title="detail.last_error" type="error" :closable="false" />
+        <h3>任务信息</h3>
         <el-descriptions v-if="detail" :column="1" border>
           <el-descriptions-item label="任务 ID">{{ detail.task_id }}</el-descriptions-item>
           <el-descriptions-item label="任务名称">{{ detail.task_name }}</el-descriptions-item>
@@ -140,14 +150,17 @@
           type="info"
           :closable="false"
           show-icon
-          title="详情打开时每 3 秒更新一次；成功人数及失败原因暂不可用。"
+          title="详情打开时每 3 秒更新一次；执行记录与状态会自动更新。"
         />
-      </div>
+        <TaskExecutionPanel v-if="detailVisible && detail" kind="pull-group" :task-id="detail.task_id" :status="detail.status" @changed="loadDetail(); loadTasks()" />
+      </PageTemplate>
     </el-drawer>
-  </div>
+  </PageTemplate>
 </template>
 
 <script setup lang="ts">
+import TaskExecutionPanel from '@/components/TaskExecutionPanel.vue'
+import PageTemplate from '@/components/PageTemplate.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { computed, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
