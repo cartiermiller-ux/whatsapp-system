@@ -2,6 +2,13 @@
 # 用法：. .\env.example.ps1       然后在同一个会话里启动后端
 # 全部为可选：不设置时，各类资源自动使用 mock 实现，系统照常可跑。
 
+# ---------- 上线安全配置 ----------
+$env:AUTO_PROVISION_USERS = "false"
+$env:ALLOWED_ORIGINS = "https://cartier.us.cc"
+# PostgreSQL：使用 psycopg 驱动；WHATSAPP_DATABASE_URL 优先于 DATABASE_URL。
+# $env:WHATSAPP_DATABASE_URL = "postgresql+psycopg://wa_user:密码@127.0.0.1:5432/whatsapp"
+# 当前使用随机会话 token，没有 JWT_SECRET_KEY 配置项。
+
 # ---------- 代理 IP（P0） ----------
 # mock（默认） / byteful / static
 $env:PROXY_PROVIDER = "mock"

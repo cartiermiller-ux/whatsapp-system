@@ -5,6 +5,7 @@ fastapi>=0.110
 uvicorn[standard]>=0.29
 sqlalchemy>=2.0
 pydantic>=2.5
+psycopg[binary]>=3.1,<4
 
 # ------------------------------------------------------------
 # 可选：只有 connect_whatsapp.py（扫码登录脚本）需要 wasock。

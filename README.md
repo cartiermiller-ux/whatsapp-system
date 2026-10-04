@@ -168,8 +168,8 @@ npm run build      # vue-tsc 类型检查 + vite build，产物在 frontend/dist
 |---|---|---|
 | `admin` | `admin123` | 超级管理员 |
 
-> 为兼容早期"任意用户名可登录"的行为，保留了**首次登录自动开户**（`AUTO_PROVISION_USERS`）。
-> 接入正式权限体系时把它改成 `False`，并修改内置管理员密码。
+> 默认关闭首次登录自动开户（`AUTO_PROVISION_USERS=false`），用户必须由管理员创建。
+> 旧版 `mock-token-用户名` 已禁用；仅接受服务器签发的随机会话 token。首次部署后应修改内置管理员密码。
 
 ---
 
@@ -429,6 +429,6 @@ python tools/check_network.py --proxy socks5://127.0.0.1:10808        # 走代�
 其他建议：
 
 - 首次部署后立即修改内置管理员密码
-- 生产环境把 `AUTO_PROVISION_USERS` 置为 `False`
+- 生产环境保持 `AUTO_PROVISION_USERS=false`，并通过 `ALLOWED_ORIGINS` 配置明确的跨域白名单
 - 生产环境建议换 PostgreSQL，并把 `balance_transaction.amount` 的浮点转换改为 Decimal 直存
 - 当前登录态存在进程内存（`TOKEN_STORE`），多副本部署需改为 Redis 等共享存储

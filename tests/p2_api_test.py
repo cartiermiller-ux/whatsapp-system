@@ -54,14 +54,18 @@ check("登录返回角色超管", body["data"]["role"] == "super_admin", body)
 check("登录返回租户", body["data"]["tenant"] == "default", body)
 
 status, body = api("POST", "/api/v1/auth/login", json={"username": "brandnew", "password": "secret123"})
-check("首次登录自动开户", status == 200 and body["data"]["username"] == "brandnew", f"{status} {body}")
+check("默认拒绝首次登录自动开户", status == 401, f"{status} {body}")
+status, body = api("POST", "/api/v1/admin/users", token=token,
+                   json={"username": "brandnew", "password": "secret123", "role": "agent_admin"})
+check("管理员显式创建用户", status == 200, f"{status} {body}")
+status, body = api("POST", "/api/v1/auth/login", json={"username": "brandnew", "password": "secret123"})
 newbie_token = body["data"]["token"]
 
 status, body = api("GET", "/api/v1/me", token=newbie_token)
-check("自动开户用户角色为 agent_admin", body["data"]["role"] == "agent_admin", body)
+check("管理员分配的用户角色为 agent_admin", body["data"]["role"] == "agent_admin", body)
 
 status, body = api("GET", "/api/v1/me", token="mock-token-legacyuser")
-check("兼容历史 mock-token 登录态", status == 200 and body["data"]["username"] == "legacyuser", f"{status} {body}")
+check("拒绝历史 mock-token 冒充登录", status == 401, f"{status} {body}")
 
 # ---------- 2. 广告文案 CRUD ----------
 section("2 广告文案 AdMessage")

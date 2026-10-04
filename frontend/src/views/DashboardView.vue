@@ -19,7 +19,7 @@
         <h3>任务运行</h3>
         <div class="task-summary"><span v-for="item in taskStates" :key="item.key">{{ item.label }} <b :class="{ danger: item.key === 'failed' && data.task_counts[item.key] > 0 }">{{ data.task_counts[item.key] }}</b></span></div>
         <h4>最近任务</h4>
-        <el-table :data="data.recent_tasks">
+        <el-table class="recent-tasks" :data="data.recent_tasks">
           <el-table-column prop="task_name" label="任务名称" min-width="160"><template #default="{ row }"><el-button link @click="go(row.kind === 'pull-group' ? '/pull-group' : '/mass-send')">{{ row.task_name }}</el-button></template></el-table-column>
           <el-table-column label="类型" width="90"><template #default="{ row }">{{ row.kind === 'pull-group' ? '拉群' : '群发' }}</template></el-table-column>
           <el-table-column label="进度" min-width="110"><template #default="{ row }">{{ row.sent === null ? '—' : `${row.sent} / ${row.targets}` }}</template></el-table-column>
@@ -98,6 +98,7 @@ h3 { font-size: 15px; margin: 0 0 18px; } h4 { font-size: 13px; margin: 24px 0 1
 .metrics span, .metrics small { font-size: 12px; color: var(--wa-text-muted); }
 .resources strong { font-size: 22px; }
 .task-summary { display: flex; flex-wrap: wrap; gap: 32px; color: var(--wa-text-secondary); }.task-summary b { margin-left: 8px; }
+.recent-tasks { --el-table-header-bg-color: transparent; --el-table-tr-bg-color: transparent; --el-table-bg-color: transparent; border-radius: 0; background: transparent; }
 .task-links { display: flex; justify-content: flex-end; flex-wrap: wrap; margin-top: 14px; gap: 12px; }
 .system-status { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; font-size: 12px; margin-top: 20px; }
 .alerts { padding-left: 20px; line-height: 2; color: var(--wa-warning); }.danger { color: var(--wa-danger) !important; }.updated { align-self: center; font-size: 12px; }

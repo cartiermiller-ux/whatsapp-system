@@ -45,7 +45,7 @@
       </el-form>
 
       <p class="tip muted">
-        内置管理员：admin / admin123；使用其他用户名首次登录会自动开户。
+        请使用管理员分配的账号登录。
       </p>
     </div>
   </div>

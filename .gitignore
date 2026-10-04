@@ -76,3 +76,4 @@ Thumbs.db
 
 # Local service credentials
 .runtime/
+backup/

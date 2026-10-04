@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException, Query, Header
+from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException, Query, Header, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import (
     create_engine, Column, Integer, String, DateTime, Boolean, DECIMAL, Numeric, Text, func, or_,
@@ -34,7 +35,7 @@ service_config.load()
 # 否则从别的目录启动 uvicorn 会静默连到另一个空库。
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_DATABASE_URL = f"sqlite:///{(BASE_DIR / 'whatsapp.db').as_posix()}"
-DATABASE_URL = os.environ.get("WHATSAPP_DATABASE_URL", DEFAULT_DATABASE_URL)
+DATABASE_URL = os.environ.get("WHATSAPP_DATABASE_URL") or os.environ.get("DATABASE_URL") or DEFAULT_DATABASE_URL
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
@@ -432,7 +433,7 @@ SETTING_DEFS: Dict[str, Dict[str, Any]] = {
 
 DEFAULT_ADMIN_USERNAME = "admin"
 DEFAULT_ADMIN_PASSWORD = "admin123"
-AUTO_PROVISION_USERS = True        # MVP：首次登录自动开户；接真实权限体系时置为 False
+AUTO_PROVISION_USERS = os.environ.get("AUTO_PROVISION_USERS", "false").strip().lower() == "true"
 TOKEN_TTL_HOURS = 72
 MONEY_SCALE = 6
 
@@ -591,6 +592,8 @@ def ensure_columns():
                 continue
             try:
                 with engine.begin() as conn:
+                    if engine.dialect.name == 'postgresql':
+                        ddl = ddl.replace('BOOLEAN DEFAULT 0', 'BOOLEAN DEFAULT FALSE').replace('BOOLEAN DEFAULT 1', 'BOOLEAN DEFAULT TRUE').replace('DATETIME', 'TIMESTAMP WITHOUT TIME ZONE')
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
                 print(f"[migrate] {table} 补充字段 {name}", flush=True)
             except Exception as exc:
@@ -706,7 +709,13 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
 
 # ---------- FastAPI ----------
-app = FastAPI(title="WhatsApp 超链群发系统 MVP")
+app = FastAPI(title="WhatsApp 超链群发系统 MVP", debug=False)
+ALLOWED_ORIGINS = [origin.strip() for origin in os.environ.get("ALLOWED_ORIGINS", "").split(",") if origin.strip()]
+if '*' in ALLOWED_ORIGINS:
+    raise RuntimeError('ALLOWED_ORIGINS 必须填写明确域名，不能使用通配符')
+app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS,
+                   allow_credentials=False, allow_methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+                   allow_headers=['Authorization', 'Content-Type', 'X-Tenant'])
 
 def get_db():
     db = SessionLocal()
@@ -717,6 +726,20 @@ def get_db():
 
 def require_login(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
     return current_user(authorization, db)
+
+
+def api_access_guard(request: Request, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    # Provider callbacks verify their own shared secret/HMAC instead of browser sessions.
+    public = {
+        ('POST', '/api/v1/auth/login'),
+        ('POST', '/api/v1/providers/receipts'),
+        ('POST', '/api/v1/balance/payment-webhook'),
+    }
+    if request.url.path.startswith('/api/v1/') and (request.method, request.url.path) not in public:
+        return current_user(authorization, db)
+
+
+app.router.dependencies.append(Depends(api_access_guard))
 
 # ---------- 号码导入 ----------
 @app.post("/api/v1/numbers/import", dependencies=[Depends(require_login)])
@@ -935,6 +958,8 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
     username = (req.username or "").strip()
     if not username or not req.password:
         raise HTTPException(status_code=400, detail="用户名或密码不能为空")
+    if not USERNAME_PATTERN.fullmatch(username):
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
 
     user = db.query(User).filter_by(username=username).first()
     if user is None:
@@ -942,7 +967,7 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
             log_operation(db, "login", target=username, result="failed",
                           detail="用户不存在", username=username)
             raise HTTPException(status_code=401, detail="用户名或密码错误")
-        # 历史行为是任意用户名都能登录，这里保留「首次登录自动开户」
+        # Only explicitly enabled development provisioning may create an account.
         user = create_user(db, username, req.password, nickname=username,
                            role="agent_admin", tenant="default")
     elif not verify_password(user, req.password):
@@ -1406,9 +1431,6 @@ def resolve_token(db: Session, token: str) -> Optional[User]:
             TOKEN_STORE.pop(token, None)
             return None
         return db.query(User).filter_by(id=info["user_id"]).first()
-    # 兼容改造前的 mock-token-<username>，避免已有登录态直接失效
-    if token.startswith("mock-token-"):
-        return get_or_create_user(db, token[len("mock-token-"):])
     return None
 
 
@@ -2106,6 +2128,8 @@ def list_users(
     user: User = Depends(require_admin),
 ):
     q = db.query(User)
+    if user.role != 'super_admin':
+        q = q.filter(User.tenant == user.tenant, User.role == 'operator')
     if keyword:
         q = q.filter(User.username.contains(keyword) | User.nickname.contains(keyword))
     if role:
@@ -2129,6 +2153,8 @@ def create_user_api(req: UserCreate, db: Session = Depends(get_db),
     if db.query(User).filter_by(username=username).first():
         raise HTTPException(status_code=400, detail="用户名已存在")
     role = req.role if req.role in USER_ROLES else "operator"
+    if user.role != 'super_admin' and (role != 'operator' or (req.tenant or 'default').strip() != user.tenant):
+        raise HTTPException(status_code=403, detail="只能创建本租户的运营用户")
     row = create_user(db, username, req.password, nickname=(req.nickname or username).strip(),
                       email=(req.email or "").strip(), phone=(req.phone or "").strip(),
                       role=role, tenant=(req.tenant or "default").strip() or "default")
@@ -2142,6 +2168,10 @@ def update_user_api(user_id: int, req: UserUpdate, db: Session = Depends(get_db)
     row = db.query(User).filter_by(id=user_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="用户不存在")
+    if user.role != 'super_admin' and (row.role != 'operator' or row.tenant != user.tenant
+                                      or req.role not in (None, 'operator')
+                                      or req.tenant not in (None, user.tenant)):
+        raise HTTPException(status_code=403, detail="只能管理本租户的运营用户")
     if req.role is not None:
         if req.role not in USER_ROLES:
             raise HTTPException(status_code=400, detail=f"角色只能是 {'/'.join(USER_ROLES)}")
@@ -2180,6 +2210,8 @@ def delete_user_api(user_id: int, db: Session = Depends(get_db),
     row = db.query(User).filter_by(id=user_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="用户不存在")
+    if user.role != 'super_admin' and (row.role != 'operator' or row.tenant != user.tenant):
+        raise HTTPException(status_code=403, detail="只能管理本租户的运营用户")
     if row.id == user.id:
         raise HTTPException(status_code=400, detail="不能删除当前登录账号")
     if row.username == DEFAULT_ADMIN_USERNAME:

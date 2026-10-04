@@ -24,6 +24,7 @@ OUT_DIR = PROJECT_DIR / "dist-deploy"
 # 要打进包里的文件/目录（相对项目根）
 INCLUDE_FILES = [
     "main.py",
+    "backup.py",
     "operations.py",
     "service_config.py",
     "service_api.py",

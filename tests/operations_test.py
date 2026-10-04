@@ -15,7 +15,13 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 _temp = tempfile.TemporaryDirectory(prefix='wa-operations-')
-os.environ['WHATSAPP_DATABASE_URL'] = 'sqlite:///' + str(Path(_temp.name) / 'test.db')
+test_database = os.environ.get('WHATSAPP_TEST_DATABASE_URL')
+if test_database:
+    from sqlalchemy.engine import make_url
+    parsed = make_url(test_database)
+    if parsed.get_backend_name() != 'postgresql' or not (parsed.database or '').endswith('_test'):
+        raise RuntimeError('External regression database must be PostgreSQL and end in _test')
+os.environ['WHATSAPP_DATABASE_URL'] = test_database or ('sqlite:///' + str(Path(_temp.name) / 'test.db'))
 os.environ['WHATSAPP_SERVICE_CONFIG_FILE'] = str(Path(_temp.name) / 'services.json')
 os.environ['USE_REAL_SEND'] = 'false'
 from fastapi.testclient import TestClient

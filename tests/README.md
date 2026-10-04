@@ -88,6 +88,17 @@ python tests/operations_test.py
 
 WSL 下旧脚本可设置 `WHATSAPP_TEST_TMP_DIR=/tmp/whatsapp-regression`，避免 Windows 挂载目录中的 SQLite 锁问题。
 
+## 上线安全与备份回归
+
+```bash
+python tests/security_test.py
+python tests/backup_test.py
+```
+
+安全测试使用临时库，覆盖所有业务接口匿名访问、自动开户关闭、拒绝旧 mock-token、普通用户权限、代理管理员越权、CORS、登出撤销、密码修改以及敏感操作审计。备份测试验证 WAL 模式下只复制已提交数据，并检查失败时不留下半成品。
+
+`operations_test.py` 默认使用 SQLite 临时库；可通过 `WHATSAPP_TEST_DATABASE_URL` 指定专用 PostgreSQL 测试库，库名必须以 `_test` 结尾。测试会创建并修改数据，禁止指向生产库。
+
 ## 多账号通道隔离
 
 ```bash
