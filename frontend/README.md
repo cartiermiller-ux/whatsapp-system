@@ -1,4 +1,4 @@
-# WhatsApp 运营系统 · 前端
+# 奥贝通讯 · 前端
 
 基于清单实现的运营后台前端。技术栈：**Vue 3 + TypeScript + Vite + Element Plus + Pinia + Axios + ECharts**。
 

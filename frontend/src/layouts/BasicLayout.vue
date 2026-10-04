@@ -3,7 +3,7 @@
     <el-aside :width="effectiveCollapsed ? '64px' : '208px'" class="layout-aside">
       <div class="logo">
         <el-icon :size="24" color="#303030"><ChatDotRound /></el-icon>
-        <span v-show="!effectiveCollapsed" class="logo-text">WhatsApp 运营</span>
+        <span v-show="!effectiveCollapsed" class="logo-text">奥贝通讯</span>
       </div>
       <nav class="sidebar-scroll" aria-label="主导航">
         <div v-for="group in menuGroups" :key="group.title" class="nav-group">

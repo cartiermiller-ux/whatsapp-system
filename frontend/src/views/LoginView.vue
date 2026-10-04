@@ -3,7 +3,7 @@
     <div class="login-card">
       <div class="brand">
         <el-icon :size="28" color="#303030"><ChatDotRound /></el-icon>
-        <h1>WhatsApp 运营系统</h1>
+        <h1>奥贝通讯</h1>
         <p class="muted">号码 · 注册 · 账号 · 群发 一体化控制台</p>
       </div>
 

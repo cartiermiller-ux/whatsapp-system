@@ -90,7 +90,7 @@ router.beforeEach((to) => {
   if (to.name === 'login' && token) {
     return { name: 'dashboard' }
   }
-  document.title = `${(to.meta.title as string) || '控制台'} · WhatsApp 运营系统`
+  document.title = `${(to.meta.title as string) || '控制台'} · 奥贝通讯`
   return true
 })
 
