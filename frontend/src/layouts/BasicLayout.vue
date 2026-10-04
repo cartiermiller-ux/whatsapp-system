@@ -39,7 +39,7 @@
 
         <div class="header-right">
           <router-link to="/billing" class="header-balance">余额 {{ balance === null ? '—' : balance.balance + ' ' + balance.currency }}</router-link>
-          <span class="tenant-label">{{ auth.tenant === 'default' ? '默认租户' : auth.tenant }}</span>
+          <span v-if="auth.user?.role === 'super_admin'" class="tenant-label">{{ auth.tenant === 'default' ? '默认租户' : auth.tenant }}</span>
 
           <el-dropdown @command="onCommand">
             <span class="user-trigger">
@@ -75,6 +75,7 @@ import { ElMessageBox } from 'element-plus'
 import { UserFilled, SwitchButton } from '@element-plus/icons-vue'
 import { billingApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
+import { canVisitPath } from '@/utils/permissions'
 
 interface MenuItem {
   path: string
@@ -120,8 +121,8 @@ const menuGroups = computed(() => [
   { title: '运营任务', paths: ['/mass-send', '/pull-group', '/ads'] },
   { title: '资源服务', paths: ['/integrations', '/downloads'] },
   { title: '财务', paths: ['/billing'] },
-].map(group => ({ title: group.title, items: group.paths.filter(path => !['/account-assistant','/downloads'].includes(path) || ['super_admin','agent_admin'].includes(auth.user?.role||'')).map(path => menuItems.find(item => item.path === path)!) })))
-const bottomItems = menuItems.filter(item => ['/profile', '/settings'].includes(item.path))
+].map(group => ({ title: group.title, items: group.paths.filter(path => canVisitPath(path, auth.user?.role)).map(path => menuItems.find(item => item.path === path)!) })))
+const bottomItems = computed(() => menuItems.filter(item => ['/profile', '/settings'].includes(item.path) && canVisitPath(item.path, auth.user?.role)))
 const balance = ref<{ balance: number; currency: string } | null>(null)
 async function loadBalance() {
   balance.value = null

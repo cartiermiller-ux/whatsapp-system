@@ -9,8 +9,8 @@
     </div>
 
     <el-tabs v-model="activeTab" tab-position="left" class="settings-tabs">
-      <el-tab-pane label="服务与通道" name="services"><ServiceChannels v-if="activeTab === 'services'" /></el-tab-pane>
-      <el-tab-pane label="全局参数" name="params">
+      <el-tab-pane v-if="isPlatformAdmin" label="服务与通道" name="services"><ServiceChannels v-if="activeTab === 'services'" /></el-tab-pane>
+      <el-tab-pane v-if="isPlatformAdmin" label="全局参数" name="params">
         <el-card shadow="never" v-loading="loading">
           <el-alert
             v-if="!isPlatformAdmin"
@@ -74,7 +74,7 @@
         </el-card>
       </el-tab-pane>
 
-      <el-tab-pane label="用户管理" name="users">
+      <el-tab-pane v-if="isAdmin" label="用户管理" name="users">
         <el-card shadow="never">
           <el-alert
             v-if="!isAdmin"
@@ -96,7 +96,7 @@
               />
               <el-select v-model="userFilters.role" placeholder="角色" style="width: 160px" clearable>
                 <el-option
-                  v-for="(label, key) in USER_ROLE_LABEL"
+                  v-for="(label, key) in availableRoles"
                   :key="key"
                   :label="label"
                   :value="key"
@@ -124,7 +124,7 @@
                   <el-tag size="small" effect="plain">{{ roleLabel(row.role) }}</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="tenant" label="租户" width="110" />
+              <el-table-column v-if="isPlatformAdmin" prop="tenant" label="租户" width="110" />
               <el-table-column label="状态" width="100">
                 <template #default="{ row }">
                   <el-tag :type="statusTagType(row.status)" size="small">
@@ -172,19 +172,22 @@
         </el-card>
       </el-tab-pane>
 
-      <el-tab-pane label="租户管理" name="tenants">
+      <el-tab-pane v-if="isPlatformAdmin" label="租户管理" name="tenants">
         <el-card shadow="never">
           <TenantManagement v-if="isPlatformAdmin && activeTab === 'tenants'" />
           <p v-else class="muted">租户管理仅平台管理员可见。</p>
         </el-card>
       </el-tab-pane>
 
-      <el-tab-pane label="权限配置" name="perms">
+      <el-tab-pane v-if="isAdmin" label="角色权限" name="perms">
         <el-card shadow="never">
-          <PlaceholderPanel
-            description="权限配置待接入后端接口"
-            api="/api/v1/admin/permissions（角色 - 权限映射）"
-          />
+          <p class="muted">角色权限由系统统一执行，业务数据始终按租户隔离。</p>
+          <el-table :data="permissionRows">
+            <el-table-column prop="feature" label="功能" min-width="180" />
+            <el-table-column v-if="isPlatformAdmin" prop="platform" label="平台管理员" min-width="150" />
+            <el-table-column prop="admin" label="租户管理员" min-width="150" />
+            <el-table-column prop="operator" label="运营人员" min-width="150" />
+          </el-table>
         </el-card>
       </el-tab-pane>
     </el-tabs>
@@ -214,14 +217,14 @@
         <el-form-item label="角色">
           <el-select v-model="userForm.role" style="width: 100%">
             <el-option
-              v-for="(label, key) in USER_ROLE_LABEL"
+              v-for="(label, key) in availableRoles"
               :key="key"
               :label="label"
               :value="key"
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="租户">
+        <el-form-item v-if="isPlatformAdmin" label="租户">
           <el-input v-model="userForm.tenant" placeholder="默认 default" maxlength="64" :disabled="!isPlatformAdmin" />
         </el-form-item>
         <el-form-item label="邮箱">
@@ -262,7 +265,7 @@ import {
 import { useRoute } from 'vue-router'
 import ServiceChannels from '@/components/ServiceChannels.vue'
 import TenantManagement from '@/components/TenantManagement.vue'
-import PlaceholderPanel from '@/components/PlaceholderPanel.vue'
+import { allowedSettingsTabs } from '@/utils/permissions'
 
 const auth = useAuthStore()
 
@@ -273,8 +276,12 @@ const CATEGORY_LABEL: Record<string, string> = {
 }
 
 const route = useRoute()
-const activeTab = ref(route.query.tab === 'services' ? 'services' : 'params')
-watch(() => route.query.tab, tab => { if (tab === 'services') activeTab.value = 'services' })
+const allowedTabs = computed(() => allowedSettingsTabs(auth.user?.role))
+const activeTab = ref(allowedTabs.value.includes(String(route.query.tab)) ? String(route.query.tab) : allowedTabs.value[0])
+watch([() => route.query.tab, () => auth.user?.role], () => {
+  const requested = String(route.query.tab || activeTab.value)
+  activeTab.value = allowedTabs.value.includes(requested) ? requested : allowedTabs.value[0]
+})
 const loading = ref(false)
 const saving = ref(false)
 const savedAt = ref('')
@@ -286,6 +293,15 @@ const original = ref<Record<string, any>>({})
 const isAdmin = computed(() => ['super_admin', 'agent_admin'].includes(auth.user?.role || ''))
 const isPlatformAdmin = computed(() => auth.user?.role === 'super_admin')
 
+const availableRoles = computed(() => isPlatformAdmin.value ? USER_ROLE_LABEL : { operator: USER_ROLE_LABEL.operator })
+const permissionRows = [
+  { feature: '账号、资源与运营任务', platform: '本租户', admin: '本租户', operator: '本租户' },
+  { feature: '账号检测、会话导入与下载', platform: '允许', admin: '本租户', operator: '无权限' },
+  { feature: '用户管理', platform: '所有用户', admin: '本租户运营人员', operator: '无权限' },
+  { feature: '租户管理、全局服务与参数', platform: '允许', admin: '无权限', operator: '无权限' },
+  { feature: '余额查看与充值申请', platform: '本租户', admin: '本租户', operator: '本租户' },
+  { feature: '确认到账、手工调账', platform: '允许', admin: '无权限', operator: '无权限' },
+]
 const expandedGroups = ref<string[]>([])
 const groups = computed(() => {
   const map = new Map<string, SettingField[]>()
@@ -509,7 +525,7 @@ async function removeUser(row: MeInfo) {
 }
 
 function loadAll() {
-  loadSettings()
+  if (isPlatformAdmin.value) loadSettings()
   if (activeTab.value === 'users') loadUsers()
 }
 

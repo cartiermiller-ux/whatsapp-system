@@ -1,4 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import { profileApi } from '@/api'
+import { canVisitPath, allowedSettingsTabs } from '@/utils/permissions'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -82,13 +85,31 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const token = localStorage.getItem('wa_token')
   if (!to.meta.public && !token) {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
   if (to.name === 'login' && token) {
     return { name: 'dashboard' }
+  }
+  if (!to.meta.public) {
+    const auth = useAuthStore()
+    try {
+      const me = await profileApi.me()
+      auth.user = { username: me.username, role: me.role, tenant: me.tenant }
+      auth.tenant = me.tenant
+    } catch {
+      if (!localStorage.getItem('wa_token')) return { name: 'login', query: { redirect: to.fullPath } }
+      return false
+    }
+    if (!canVisitPath(to.path, auth.user?.role)) return { name: 'dashboard' }
+    if (to.path === '/settings') {
+      const tabs = allowedSettingsTabs(auth.user?.role)
+      if (!tabs.includes(String(to.query.tab || ''))) {
+        return { path: '/settings', query: { ...to.query, tab: tabs[0] }, replace: true }
+      }
+    }
   }
   document.title = `${(to.meta.title as string) || '控制台'} · 奥贝通讯`
   return true
