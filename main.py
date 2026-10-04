@@ -7,7 +7,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
-from pydantic import BaseModel
+from tenancy import TenantOwned, TenantSession, bind_tenant, tenant_query, migrate_tenants
+from sqlalchemy import ForeignKey
+from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -40,14 +42,26 @@ engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
 )
-SessionLocal = sessionmaker(bind=engine)
+SessionLocal = sessionmaker(bind=engine, class_=TenantSession, info={"tenant_id": None})
+
+def system_session():
+    """Explicit privileged session for migrations and scheduler discovery only."""
+    return SessionLocal(info={"system_scope": True})
 Base = declarative_base()
 
 # ---------- 模型 ----------
-class NumberPool(Base):
+class Tenant(Base):
+    __tablename__ = "tenant"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), unique=True, nullable=False)
+    status = Column(String(20), default="active", nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+class NumberPool(TenantOwned, Base):
     __tablename__ = "number_pool"
+    __table_args__ = (UniqueConstraint('tenant_id', 'phone_number', name='uq_number_pool_tenant_phone'),)
     id = Column(Integer, primary_key=True, index=True)
-    phone_number = Column(String(20), unique=True, index=True)
+    phone_number = Column(String(20), index=True)
     source_type = Column(String(20))
     source_channel = Column(String(50))
     number_segment = Column(String(20))
@@ -60,7 +74,7 @@ class NumberPool(Base):
     account_id = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
-class AccountPool(Base):
+class AccountPool(TenantOwned, Base):
     __tablename__ = "account_pool"
     id = Column(Integer, primary_key=True, index=True)
     number_id = Column(Integer, index=True)
@@ -80,7 +94,7 @@ class AccountPool(Base):
     session_name = Column(String(64), default="")   # 该账号用的 WhatsApp 登录态目录
     created_at = Column(DateTime, default=datetime.now)
 
-class MassSendTask(Base):
+class MassSendTask(TenantOwned, Base):
     __tablename__ = "mass_send_task"
     id = Column(Integer, primary_key=True, index=True)
     task_name = Column(String(255))
@@ -102,19 +116,20 @@ class MassSendTask(Base):
     ad_message_id = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
-class WhatsAppLinkSession(Base):
+class WhatsAppLinkSession(TenantOwned, Base):
     __tablename__ = 'whatsapp_link_session'
     id = Column(Integer, primary_key=True)
     auth_name = Column(String(255), unique=True, index=True)
     owner_user_id = Column(Integer, index=True)
     created_at = Column(DateTime, default=datetime.now)
 
-class ResourceGroup(Base):
+class ResourceGroup(TenantOwned, Base):
     __tablename__ = "resource_group"
+    __table_args__ = (UniqueConstraint('tenant_id', 'group_jid', name='uq_resource_group_tenant_jid'),)
     id = Column(Integer, primary_key=True, index=True)
     group_name = Column(String(255))
     source_channel = Column(String(255), default="")
-    group_jid = Column(String(255), unique=True)
+    group_jid = Column(String(255))
     group_link = Column(String(500))
     owner_account_id = Column(Integer)
     number_segment = Column(String(20))
@@ -127,7 +142,7 @@ class ResourceGroup(Base):
     status = Column(String(20), default="active")
     created_at = Column(DateTime, default=datetime.now)
 
-class InviteTask(Base):
+class InviteTask(TenantOwned, Base):
     __tablename__ = "invite_task"
     id = Column(Integer, primary_key=True, index=True)
     task_name = Column(String(255))
@@ -146,7 +161,7 @@ class InviteTask(Base):
     scheduled_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
-class TaskLog(Base):
+class TaskLog(TenantOwned, Base):
     __tablename__ = "task_log"
     id = Column(Integer, primary_key=True, index=True)
     task_id = Column(Integer)
@@ -158,7 +173,7 @@ class TaskLog(Base):
     result = Column(String(20))
     created_at = Column(DateTime, default=datetime.now)
 
-class TaskExecution(Base):
+class TaskExecution(TenantOwned, Base):
     """每个目标一条持久化执行记录；成功目标不因重试再次执行。"""
     __tablename__ = "task_execution"
     __table_args__ = (UniqueConstraint("task_kind", "task_id", "target_id"),)
@@ -178,7 +193,7 @@ class TaskExecution(Base):
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
-class ReceiptEvent(Base):
+class ReceiptEvent(TenantOwned, Base):
     __tablename__ = "receipt_event"
     __table_args__ = (UniqueConstraint("message_id", "target"),)
     id = Column(Integer, primary_key=True)
@@ -188,7 +203,7 @@ class ReceiptEvent(Base):
     received_at = Column(DateTime, default=datetime.now)
 
 # ---------- P2 模型：广告消息 ----------
-class AdMessage(Base):
+class AdMessage(TenantOwned, Base):
     """广告文案（多语言）。变量以 {name} / {link} 形式写在 content 中。"""
     __tablename__ = "ad_message"
     id = Column(Integer, primary_key=True, index=True)
@@ -206,7 +221,7 @@ class AdMessage(Base):
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
-class AdLink(Base):
+class AdLink(TenantOwned, Base):
     """超链：短链生成 / 域名伪装 / 追踪参数。"""
     __tablename__ = "ad_link"
     id = Column(Integer, primary_key=True, index=True)
@@ -222,8 +237,8 @@ class AdLink(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 # ---------- P2 模型：余额与计费 ----------
-class BalanceTransaction(Base):
-    """余额流水账本。余额 = 全部流水 amount 之和（不额外维护余额字段，避免对不上）。"""
+class BalanceTransaction(TenantOwned, Base):
+    """租户流水账本。余额 = 当前租户流水 amount 之和。"""
     __tablename__ = "balance_transaction"
     id = Column(Integer, primary_key=True, index=True)
     type = Column(String(30), index=True)                 # recharge 充值 / consume 消费 / refund 退款 / adjust 调整
@@ -239,7 +254,7 @@ class BalanceTransaction(Base):
     remark = Column(String(500), default="")
     created_at = Column(DateTime, default=datetime.now, index=True)
 
-class RechargeOrder(Base):
+class RechargeOrder(TenantOwned, Base):
     """USDT 充值订单。"""
     __tablename__ = "recharge_order"
     id = Column(Integer, primary_key=True, index=True)
@@ -266,7 +281,8 @@ class User(Base):
     email = Column(String(128), default="")
     phone = Column(String(32), default="")
     role = Column(String(30), default="operator")         # super_admin / agent_admin / operator
-    tenant = Column(String(64), default="default")
+    tenant = Column(String(64), default="default")  # compatibility display name
+    tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False, index=True)
     whatsapp_session_name = Column(String(255), default="")
     status = Column(String(20), default="active")         # active / disabled
     last_login_at = Column(DateTime, nullable=True)
@@ -274,7 +290,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
-class OperationLog(Base):
+class OperationLog(TenantOwned, Base):
     """用户操作日志（个人中心 —— 时间 / 操作 / 对象 / 结果）。"""
     __tablename__ = "operation_log"
     id = Column(Integer, primary_key=True, index=True)
@@ -300,7 +316,7 @@ class Setting(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 # ---------- 集成相关模型：代理池 / 接码订单 / 采购订单 ----------
-class ProxyPool(Base):
+class ProxyPool(TenantOwned, Base):
     """代理 IP 池。来源可以是供应商同步（Byteful/Ping Proxies）或手工导入。"""
     __tablename__ = "proxy_pool"
     id = Column(Integer, primary_key=True, index=True)
@@ -334,7 +350,7 @@ class ProxyPool(Base):
         return f"{self.protocol}://{self.host}:{self.port}"
 
 
-class SmsOrder(Base):
+class SmsOrder(TenantOwned, Base):
     """接码平台的取号订单。"""
     __tablename__ = "sms_order"
     id = Column(Integer, primary_key=True, index=True)
@@ -354,7 +370,7 @@ class SmsOrder(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
-class PurchaseOrder(Base):
+class PurchaseOrder(TenantOwned, Base):
     """账号采购订单（对接账号星球这类成品号供应商）。"""
     __tablename__ = "purchase_order"
     id = Column(Integer, primary_key=True, index=True)
@@ -465,6 +481,12 @@ def verify_password(user: Optional["User"], password: str) -> bool:
     return hmac.compare_digest(user.password_hash, hash_password(password, user.salt))
 
 def create_user(db: Session, username: str, password: str, **fields) -> "User":
+    name = (fields.get("tenant") or "default").strip()
+    tenant = db.query(Tenant).filter_by(name=name).first()
+    if tenant is None:
+        tenant = Tenant(name=name)
+        db.add(tenant); db.flush()
+    fields.update(tenant=name, tenant_id=tenant.id)
     user = User(username=username, **fields)
     set_password(user, password)
     db.add(user)
@@ -543,7 +565,7 @@ def upsert_setting(db: Session, key: str, raw_value: str):
 
 def seed_defaults():
     """建表后补齐默认设置与内置管理员，保证空库开箱可用。"""
-    db = SessionLocal()
+    db = SessionLocal(info={"tenant_id": 1})
     try:
         existing = {row.key for row in db.query(Setting).all()}
         for key in SETTING_DEFS:
@@ -606,6 +628,7 @@ def ensure_columns():
 
 Base.metadata.create_all(bind=engine)
 ensure_columns()
+migrate_tenants(engine, Base.metadata)
 seed_defaults()
 
 # ---------- Pydantic ----------
@@ -697,14 +720,16 @@ class UserCreate(BaseModel):
     email: str = ""
     phone: str = ""
     role: str = "operator"
-    tenant: str = "default"
+    tenant: str = Field(default="default", max_length=64)
+    tenant_id: Optional[int] = Field(default=None, ge=1)
 
 class UserUpdate(BaseModel):
     nickname: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     role: Optional[str] = None
-    tenant: Optional[str] = None
+    tenant: Optional[str] = Field(default=None, max_length=64)
+    tenant_id: Optional[int] = Field(default=None, ge=1)
     status: Optional[str] = None
     password: Optional[str] = None
 
@@ -718,7 +743,7 @@ app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS,
                    allow_headers=['Authorization', 'Content-Type', 'X-Tenant'])
 
 def get_db():
-    db = SessionLocal()
+    db = SessionLocal(info={"tenant_id": None})
     try:
         yield db
     finally:
@@ -978,6 +1003,10 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
     if user.status != "active":
         raise HTTPException(status_code=403, detail="账号已被禁用，请联系管理员")
 
+    tenant = db.get(Tenant, user.tenant_id)
+    if not tenant or tenant.status != "active":
+        raise HTTPException(403, "租户不可用")
+    bind_tenant(db, user.tenant_id)
     user.last_login_at = datetime.now()
     user.login_count = (user.login_count or 0) + 1
     db.commit()
@@ -989,7 +1018,7 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
             "token": issue_token(user),
             "username": user.username,
             "role": user.role,
-            "tenant": user.tenant or "default",
+            "tenant": user.tenant or "default", "tenant_id": user.tenant_id,
         },
     }
 
@@ -1399,6 +1428,7 @@ def issue_token(user: User) -> str:
     TOKEN_STORE[token] = {
         "user_id": user.id,
         "username": user.username,
+        "tenant_id": user.tenant_id,
         "issued_at": datetime.now(),
         "expire_at": datetime.now() + timedelta(hours=TOKEN_TTL_HOURS),
     }
@@ -1430,7 +1460,11 @@ def resolve_token(db: Session, token: str) -> Optional[User]:
         if info.get("expire_at") and info["expire_at"] < datetime.now():
             TOKEN_STORE.pop(token, None)
             return None
-        return db.query(User).filter_by(id=info["user_id"]).first()
+        user = db.query(User).filter_by(id=info["user_id"]).first()
+        if user and user.tenant_id == info.get("tenant_id"):
+            return user
+        TOKEN_STORE.pop(token, None)
+        return None
     return None
 
 
@@ -1440,6 +1474,10 @@ def current_user(authorization: Optional[str] = Header(None), db: Session = Depe
         raise HTTPException(status_code=401, detail="未登录或登录状态已失效，请重新登录")
     if user.status != "active":
         raise HTTPException(status_code=403, detail="账号已被禁用")
+    tenant = db.get(Tenant, user.tenant_id)
+    if not tenant or tenant.status != "active":
+        raise HTTPException(403, "租户不可用")
+    bind_tenant(db, user.tenant_id)
     return user
 
 
@@ -1449,11 +1487,22 @@ def require_admin(user: User = Depends(current_user)) -> User:
     return user
 
 
+def require_platform_admin(user: User = Depends(current_user)) -> User:
+    if user.role != 'super_admin':
+        raise HTTPException(403, '需要平台管理员权限')
+    return user
+
+
 def log_operation(db: Session, action: str, target: str = "", result: str = "success",
                   detail: str = "", user: Optional[User] = None,
                   username: str = "", user_id: Optional[int] = None):
     try:
+        if user is not None:
+            bind_tenant(db, user.tenant_id)
+        elif not db.info.get("tenant_id"):
+            bind_tenant(db, 1)
         db.add(OperationLog(
+            tenant_id=user.tenant_id if user else (db.info.get("tenant_id") or 1),
             user_id=user.id if user else user_id,
             username=((user.username if user else username) or "")[:64],
             action=action, target=(target or "")[:255],
@@ -1468,7 +1517,7 @@ def user_dict(user: User) -> Dict[str, Any]:
     return {
         "id": user.id, "username": user.username, "nickname": user.nickname or "",
         "email": user.email or "", "phone": user.phone or "", "role": user.role,
-        "tenant": user.tenant or "default", "status": user.status,
+        "tenant": user.tenant or "default", "tenant_id": user.tenant_id, "status": user.status,
         "last_login_at": _dt(user.last_login_at), "login_count": user.login_count or 0,
         "created_at": _dt(user.created_at), "updated_at": _dt(user.updated_at),
     }
@@ -1790,6 +1839,11 @@ def delete_ad_link(link_id: int, db: Session = Depends(get_db),
 @app.get("/s/{short_code}")
 def redirect_short_link(short_code: str, db: Session = Depends(get_db)):
     """短链跳转（本地演示用，顺带累计点击量）。"""
+    with system_session() as lookup:
+        owner = lookup.query(AdLink.tenant_id).filter_by(short_code=short_code).scalar()
+    if owner is None:
+        raise HTTPException(404, '短链不存在或已停用')
+    bind_tenant(db, owner)
     link = db.query(AdLink).filter_by(short_code=short_code).first()
     if not link or link.status != "active":
         raise HTTPException(status_code=404, detail="短链不存在或已停用")
@@ -1820,7 +1874,7 @@ TRANSACTION_TYPES = ("recharge", "consume", "refund", "adjust")
 
 
 def current_balance(db: Session) -> Decimal:
-    """余额 = 全部流水之和，账本即余额。"""
+    """Mandatory session criteria restrict this aggregate to the bound tenant."""
     total = db.query(func.coalesce(func.sum(BalanceTransaction.amount), 0)).scalar()
     return _dec(total)
 
@@ -1926,7 +1980,7 @@ def list_balance_transactions(
 
 @app.post("/api/v1/balance/transactions")
 def create_balance_transaction(payload: Dict[str, Any], db: Session = Depends(get_db),
-                               user: User = Depends(require_admin)):
+                               user: User = Depends(require_platform_admin)):
     """手工入账 / 扣费（管理员调账）。"""
     tx_type = str(payload.get("type") or "adjust")
     if tx_type not in TRANSACTION_TYPES:
@@ -2009,7 +2063,7 @@ def list_recharge_orders(
 
 @app.post("/api/v1/balance/recharge/{order_id}/confirm")
 def confirm_recharge(order_id: int, db: Session = Depends(get_db),
-                     user: User = Depends(require_admin)):
+                     user: User = Depends(require_platform_admin)):
     """管理员人工审核确认；与签名回调共用原子入账流程。"""
     from finance_api import credit_order
     with operations._channel_lock:
@@ -2129,7 +2183,7 @@ def list_users(
 ):
     q = db.query(User)
     if user.role != 'super_admin':
-        q = q.filter(User.tenant == user.tenant, User.role == 'operator')
+        q = q.filter(User.tenant_id == user.tenant_id, User.role == 'operator')
     if keyword:
         q = q.filter(User.username.contains(keyword) | User.nickname.contains(keyword))
     if role:
@@ -2145,6 +2199,11 @@ def list_users(
 @app.post("/api/v1/admin/users")
 def create_user_api(req: UserCreate, db: Session = Depends(get_db),
                     user: User = Depends(require_admin)):
+    if req.tenant_id is not None:
+        tenant = db.get(Tenant, req.tenant_id)
+        if not tenant or tenant.status != 'active':
+            raise HTTPException(422, '租户不存在或已停用')
+        req.tenant = tenant.name
     username = (req.username or "").strip()
     if not USERNAME_PATTERN.fullmatch(username):
         raise HTTPException(status_code=400, detail="用户名需为 2-64 位字母、数字、下划线、点、@ 或短横线")
@@ -2165,10 +2224,15 @@ def create_user_api(req: UserCreate, db: Session = Depends(get_db),
 @app.put("/api/v1/admin/users/{user_id}")
 def update_user_api(user_id: int, req: UserUpdate, db: Session = Depends(get_db),
                     user: User = Depends(require_admin)):
+    if req.tenant_id is not None:
+        tenant = db.get(Tenant, req.tenant_id)
+        if not tenant or tenant.status != 'active':
+            raise HTTPException(422, '租户不存在或已停用')
+        req.tenant = tenant.name
     row = db.query(User).filter_by(id=user_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="用户不存在")
-    if user.role != 'super_admin' and (row.role != 'operator' or row.tenant != user.tenant
+    if user.role != 'super_admin' and (row.role != 'operator' or row.tenant_id != user.tenant_id
                                       or req.role not in (None, 'operator')
                                       or req.tenant not in (None, user.tenant)):
         raise HTTPException(status_code=403, detail="只能管理本租户的运营用户")
@@ -2191,7 +2255,14 @@ def update_user_api(user_id: int, req: UserUpdate, db: Session = Depends(get_db)
     if req.phone is not None:
         row.phone = req.phone.strip()[:32]
     if req.tenant is not None:
-        row.tenant = req.tenant.strip()[:64] or "default"
+        name = req.tenant.strip()[:64] or "default"
+        tenant = db.query(Tenant).filter_by(name=name).first()
+        if tenant is None:
+            tenant = Tenant(name=name); db.add(tenant); db.flush()
+        if row.tenant_id != tenant.id:
+            revoke_user_tokens(row.id)
+            row.whatsapp_session_name = ""
+        row.tenant, row.tenant_id = name, tenant.id
     if req.password:
         if len(req.password) < 6:
             raise HTTPException(status_code=400, detail="密码长度至少 6 位")
@@ -2210,7 +2281,7 @@ def delete_user_api(user_id: int, db: Session = Depends(get_db),
     row = db.query(User).filter_by(id=user_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="用户不存在")
-    if user.role != 'super_admin' and (row.role != 'operator' or row.tenant != user.tenant):
+    if user.role != 'super_admin' and (row.role != 'operator' or row.tenant_id != user.tenant_id):
         raise HTTPException(status_code=403, detail="只能管理本租户的运营用户")
     if row.id == user.id:
         raise HTTPException(status_code=400, detail="不能删除当前登录账号")
@@ -2256,7 +2327,7 @@ def get_settings_schema(db: Session = Depends(get_db), user: User = Depends(curr
 
 @app.put("/api/v1/settings")
 def update_settings(payload: Dict[str, Any], db: Session = Depends(get_db),
-                    user: User = Depends(require_admin)):
+                    user: User = Depends(require_platform_admin)):
     if not payload:
         raise HTTPException(status_code=400, detail="没有需要保存的参数")
     unknown = [key for key in payload if key not in SETTING_DEFS]
@@ -2592,6 +2663,8 @@ def sync_proxies(payload: Optional[Dict[str, Any]] = None, db: Session = Depends
 
 def migrate_exit_proxy(db):
     """Preserve the formerly configured exit in the resource pool without echoing credentials."""
+    if db.info.get('tenant_id') != 1:
+        return
     if db.query(ProxyPool).filter_by(is_default=True).first():
         return
     from whatsapp_session import setting
@@ -2981,7 +3054,7 @@ def resolve_user_session(auth_name, user, db):
     if not name:
         return ''
     path = auth_path(name).resolve()
-    allowed = bool(user.whatsapp_session_name and auth_path(user.whatsapp_session_name).resolve() == path)
+    allowed = False
     if not allowed:
         allowed = any(auth_path(link.auth_name).resolve()==path for link in db.query(WhatsAppLinkSession).filter_by(owner_user_id=user.id))
     if not allowed:
@@ -3147,7 +3220,7 @@ def whatsapp_unlink(payload: Optional[Dict[str, Any]] = None, db: Session = Depe
             account.session_enabled = False
             account.full_params_ready = False
             account.converted_at = None
-        for selected in db.query(User).filter_by(whatsapp_session_name=auth_name):
+        for selected in db.query(User).filter_by(whatsapp_session_name=auth_name, tenant_id=user.tenant_id):
             selected.whatsapp_session_name = ''
         db.commit()
     log_operation(db, "whatsapp_unlink", target=auth_name, detail="解绑登录态", user=user)
@@ -3288,4 +3361,7 @@ app.include_router(account_export_api.router)
 app.include_router(account_management_api.router)
 import workspace_api
 Base.metadata.create_all(bind=engine)
+migrate_tenants(engine, Base.metadata)
 app.include_router(workspace_api.router)
+import tenant_api
+app.include_router(tenant_api.router)

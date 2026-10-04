@@ -39,16 +39,7 @@
 
         <div class="header-right">
           <router-link to="/billing" class="header-balance">余额 {{ balance === null ? '—' : balance.balance + ' ' + balance.currency }}</router-link>
-          <el-select
-            v-model="tenant"
-            size="small"
-            class="tenant-select"
-            @change="onTenantChange"
-          >
-            <el-option label="默认租户" value="default" />
-            <el-option label="租户 A" value="tenant-a" />
-            <el-option label="租户 B" value="tenant-b" />
-          </el-select>
+          <span class="tenant-label">{{ auth.tenant === 'default' ? '默认租户' : auth.tenant }}</span>
 
           <el-dropdown @command="onCommand">
             <span class="user-trigger">
@@ -107,10 +98,6 @@ const effectiveCollapsed = computed(() => collapsed.value || compact.value)
 function updateCompact(event: MediaQueryListEvent) { compact.value = event.matches }
 onMounted(() => narrowScreen.addEventListener('change', updateCompact))
 onBeforeUnmount(() => narrowScreen.removeEventListener('change', updateCompact))
-const tenant = computed({
-  get: () => auth.tenant,
-  set: (v: string) => auth.switchTenant(v),
-})
 
 const menuItems: MenuItem[] = [
   { path: '/dashboard', title: '数据看板', icon: 'DataLine' },
@@ -147,11 +134,6 @@ watch(() => auth.tenant, loadBalance)
 const activeMenu = computed(() => route.path)
 const currentTitle = computed(() => (route.meta.title as string) || '')
 
-function onTenantChange(value: string) {
-  ElMessageBox.alert(`已切换到「${value}」，后续请求将携带该租户标识。`, '租户切换', {
-    confirmButtonText: '知道了',
-  }).catch(() => {})
-}
 
 async function onCommand(command: string) {
   if (command === 'logout') {

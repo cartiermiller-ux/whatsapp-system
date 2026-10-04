@@ -147,7 +147,7 @@
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
             <template v-if="row.status === 'pending'">
-              <el-button link type="primary" :icon="CircleCheck" @click="confirmOrder(row)">
+              <el-button v-if="isPlatformAdmin" link type="primary" :icon="CircleCheck" @click="confirmOrder(row)">
                 确认到账
               </el-button>
               <el-button link type="danger" @click="cancelOrder(row)">取消</el-button>
@@ -247,6 +247,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search, CopyDocument, CircleCheck } from '@element-plus/icons-vue'
 import { billingApi } from '@/api'
+import { useAuthStore } from '@/stores/auth'
 import type { BalanceInfo, BillingRule, RechargeOrder, TransactionRow } from '@/types/api'
 import {
   ORDER_STATUS_LABEL,
@@ -255,6 +256,8 @@ import {
   statusTagType,
 } from '@/utils/format'
 
+const auth = useAuthStore()
+const isPlatformAdmin = computed(() => auth.user?.role === 'super_admin')
 const activeTab = ref('transactions')
 const rechargeVisible = ref(false)
 const loading = ref(false)

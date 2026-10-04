@@ -224,7 +224,7 @@ check("空消息直接拒绝", main.send_via_wasock("a@s.whatsapp.net", "")[0] i
 
 # ---------------------------------------------------------------- 目标解析
 section("2 目标解析（resource_group.id 与 number_pool.id 同为 1，必须靠 target_type 区分）")
-db = SessionLocal()
+db = SessionLocal(info={'tenant_id': 1})
 group = ResourceGroup(group_name="巴西促销群", group_jid="120363000000000001@g.us",
                       group_link="https://chat.whatsapp.com/AAA")
 phone_row = NumberPool(phone_number="8613800000001", source_type="physical",

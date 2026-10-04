@@ -22,7 +22,6 @@ export const useAuthStore = defineStore('auth', () => {
   async function login(payload: {
     username: string
     password: string
-    tenant?: string
     remember?: boolean
   }) {
     const data = await authApi.login({
@@ -36,7 +35,7 @@ export const useAuthStore = defineStore('auth', () => {
       role: data.role,
       tenant: data.tenant,
     }
-    tenant.value = payload.tenant || data.tenant || 'default'
+    tenant.value = data.tenant || 'default'
     remember.value = !!payload.remember
 
     localStorage.setItem(LS_TOKEN, token.value)
@@ -59,14 +58,6 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem(LS_REMEMBER)
   }
 
-  function switchTenant(next: string) {
-    tenant.value = next
-    localStorage.setItem(LS_TENANT, next)
-    if (user.value) {
-      user.value = { ...user.value, tenant: next }
-      localStorage.setItem(LS_USER, JSON.stringify(user.value))
-    }
-  }
 
-  return { token, user, tenant, remember, login, logout, switchTenant }
+  return { token, user, tenant, remember, login, logout }
 })

@@ -99,6 +99,15 @@ python tests/backup_test.py
 
 `operations_test.py` 默认使用 SQLite 临时库；可通过 `WHATSAPP_TEST_DATABASE_URL` 指定专用 PostgreSQL 测试库，库名必须以 `_test` 结尾。测试会创建并修改数据，禁止指向生产库。
 
+## 多租户隔离与旧库升级
+
+```bash
+python tests/tenant_test.py
+python tests/tenant_migration_test.py
+```
+
+两个租户分别验证读写、聚合统计、余额、扣费、回调、任务执行、会话和导出隔离；旧库升级测试从提交 bd36441 构造历史数据库，连续升级两次并比较所有原有字段。tenant_test.py 可使用 WHATSAPP_TEST_DATABASE_URL 指定专用 PostgreSQL 测试库，库名必须以 _test 结尾。
+
 ## 多账号通道隔离
 
 ```bash

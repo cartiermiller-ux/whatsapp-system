@@ -31,7 +31,7 @@ def archive(phone='12345678901', extra=None):
 
 class WorkspaceTests(unittest.TestCase):
     def setUp(self):
-        self.db = m.SessionLocal()
+        self.db = m.SessionLocal(info={'tenant_id': 1})
         self.user = self.db.query(m.User).first()
 
     def tearDown(self):

@@ -136,8 +136,11 @@ def proxy_for_session(db, auth_name):
     account = db.query(m.AccountPool).filter_by(session_name=auth_name).first()
     number = db.get(m.NumberPool, account.number_id) if account else None
     proxy = db.query(m.ProxyPool).filter_by(bound_number_id=number.id).first() if number else None
+    if proxy is None:
+        proxy = db.query(m.ProxyPool).filter_by(is_default=True).first()
     if proxy and proxy.provider != 'mock':
         if proxy.status == 'disabled':
             raise HTTPException(422, '账号代理已停用，请到资源对接 → 代理池检查代理')
         return proxy.address
-    return None
+    # The legacy environment proxy belongs to the default workspace only.
+    return None if db.info.get('tenant_id') == 1 else ''

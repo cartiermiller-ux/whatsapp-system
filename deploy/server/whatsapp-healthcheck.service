@@ -1,0 +1,12 @@
+[Unit]
+Description=WhatsApp read-only runtime health checks
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/www/wwwroot/cartier.us.cc
+EnvironmentFile=/etc/whatsapp/database.env
+ExecStart=/www/wwwroot/cartier.us.cc/.venv-linux/bin/python tools/check_runtime_health.py
+TimeoutStartSec=45
+NoNewPrivileges=true
+PrivateTmp=true

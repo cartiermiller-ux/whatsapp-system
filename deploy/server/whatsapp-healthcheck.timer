@@ -1,0 +1,10 @@
+[Unit]
+Description=Check WhatsApp services every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=1min
+Unit=whatsapp-healthcheck.service
+
+[Install]
+WantedBy=timers.target

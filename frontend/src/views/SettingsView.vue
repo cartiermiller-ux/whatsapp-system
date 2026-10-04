@@ -13,12 +13,12 @@
       <el-tab-pane label="全局参数" name="params">
         <el-card shadow="never" v-loading="loading">
           <el-alert
-            v-if="!isAdmin"
+            v-if="!isPlatformAdmin"
             class="section-gap"
             type="warning"
             :closable="false"
             show-icon
-            title="当前账号不是管理员，只能查看全局参数。"
+            title="全局参数由平台管理员维护，当前账号仅可查看。"
           />
           <el-alert
             v-else-if="dirty"
@@ -39,14 +39,14 @@
                   :min="field.min ?? undefined"
                   :max="field.max ?? undefined"
                   :precision="field.type === 'float' ? 2 : 0"
-                  :disabled="!isAdmin"
+                  :disabled="!isPlatformAdmin"
                 />
-                <el-switch v-else-if="field.type === 'bool'" v-model="form[field.key]" :disabled="!isAdmin" />
+                <el-switch v-else-if="field.type === 'bool'" v-model="form[field.key]" :disabled="!isPlatformAdmin" />
                 <el-input
                   v-else
                   v-model="form[field.key]"
                   :maxlength="field.max_len || 255"
-                  :disabled="!isAdmin"
+                  :disabled="!isPlatformAdmin"
                   class="text-input"
                   :placeholder="field.key === 'recharge_address' ? '例如 TRC20 收款地址' : ''"
                 />
@@ -63,7 +63,7 @@
             <el-button
               type="primary"
               :loading="saving"
-              :disabled="!isAdmin || !dirty"
+              :disabled="!isPlatformAdmin || !dirty"
               @click="saveSettings"
             >
               保存
@@ -174,7 +174,8 @@
 
       <el-tab-pane label="租户管理" name="tenants">
         <el-card shadow="never">
-          <PlaceholderPanel description="租户管理待接入后端接口" api="/api/v1/admin/tenants" />
+          <TenantManagement v-if="isPlatformAdmin && activeTab === 'tenants'" />
+          <p v-else class="muted">租户管理仅平台管理员可见。</p>
         </el-card>
       </el-tab-pane>
 
@@ -221,7 +222,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="租户">
-          <el-input v-model="userForm.tenant" placeholder="默认 default" />
+          <el-input v-model="userForm.tenant" placeholder="默认 default" maxlength="64" :disabled="!isPlatformAdmin" />
         </el-form-item>
         <el-form-item label="邮箱">
           <el-input v-model="userForm.email" />
@@ -260,6 +261,7 @@ import {
 } from '@/utils/format'
 import { useRoute } from 'vue-router'
 import ServiceChannels from '@/components/ServiceChannels.vue'
+import TenantManagement from '@/components/TenantManagement.vue'
 import PlaceholderPanel from '@/components/PlaceholderPanel.vue'
 
 const auth = useAuthStore()
@@ -282,6 +284,7 @@ const form = ref<Record<string, any>>({})
 const original = ref<Record<string, any>>({})
 
 const isAdmin = computed(() => ['super_admin', 'agent_admin'].includes(auth.user?.role || ''))
+const isPlatformAdmin = computed(() => auth.user?.role === 'super_admin')
 
 const expandedGroups = ref<string[]>([])
 const groups = computed(() => {
@@ -433,7 +436,7 @@ function openUserDialog(row?: MeInfo) {
   userForm.email = row?.email ?? ''
   userForm.phone = row?.phone ?? ''
   userForm.role = row?.role ?? 'operator'
-  userForm.tenant = row?.tenant ?? 'default'
+  userForm.tenant = row?.tenant ?? auth.tenant
   userForm.status = row?.status ?? 'active'
   userDialogVisible.value = true
 }

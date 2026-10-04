@@ -11,12 +11,12 @@ _health = {'checked_at': None, 'items': []}
 
 
 @router.get('/config')
-def read_config(user=Depends(m.require_admin)):
+def read_config(user=Depends(m.require_platform_admin)):
     return {'code': 0, 'data': service_config.schema()}
 
 
 @router.put('/config')
-def update_config(payload: dict[str, str], db=Depends(m.get_db), user=Depends(m.require_admin)):
+def update_config(payload: dict[str, str], db=Depends(m.get_db), user=Depends(m.require_platform_admin)):
     # Avoid live provider replacement during an in-flight external request.
     if not operations._channel_lock.acquire(blocking=False):
         raise HTTPException(409, '任务正在执行，请暂停任务后修改服务配置')
@@ -46,7 +46,7 @@ def cached_health(user=Depends(m.current_user)):
 
 
 @router.post('/health')
-def check_health(user=Depends(m.require_admin)):
+def check_health(user=Depends(m.require_platform_admin)):
     items = []
     for provider in (m.get_message_provider(), get_sms_provider(), get_proxy_provider(), get_account_provider()):
         result = {'kind': provider.kind, 'name': provider.name, 'state': 'unknown', 'detail': ''}

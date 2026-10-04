@@ -15,7 +15,7 @@ import operations
 router = APIRouter(prefix='/api/v1/balance')
 
 
-class PaymentReceipt(m.Base):
+class PaymentReceipt(m.TenantOwned, m.Base):
     __tablename__ = 'payment_receipt'
     id = m.Column(m.Integer, primary_key=True)
     tx_hash = m.Column(m.String(128), unique=True, index=True)
@@ -93,6 +93,12 @@ async def payment_webhook(request: Request, x_payment_signature: str = Header(''
     except ValueError:
         raise HTTPException(422, '到账回调字段无效')
     with operations._channel_lock:
+        # A verified provider callback derives ownership from our order, never its payload.
+        with m.system_session() as lookup:
+            tenant_id = lookup.query(m.RechargeOrder.tenant_id).filter_by(order_no=event.order_no).scalar()
+        if tenant_id is None:
+            raise HTTPException(404, '充值订单不存在')
+        m.bind_tenant(db, tenant_id)
         order = db.query(m.RechargeOrder).filter_by(order_no=event.order_no).first()
         if not order:
             raise HTTPException(404, '充值订单不存在')

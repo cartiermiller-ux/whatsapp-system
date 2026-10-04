@@ -321,6 +321,15 @@ export const profileApi = {
 
 /** 用户管理（管理员） —— /api/v1/admin/users */
 export const adminApi = {
+  tenants() {
+    return request<{ id: number; name: string; status: string; users: number; created_at: string }[]>({ url: '/admin/tenants', method: 'get' })
+  },
+  createTenant(name: string) {
+    return request<{ id: number }>({ url: '/admin/tenants', method: 'post', data: { name } })
+  },
+  updateTenant(id: number, status: string) {
+    return request({ url: `/admin/tenants/${id}`, method: 'put', data: { status } })
+  },
   users(query: { page?: number; size?: number; keyword?: string; role?: string; status?: string } = {}) {
     return request<PageResult<MeInfo>>({ url: '/admin/users', method: 'get', params: query })
   },

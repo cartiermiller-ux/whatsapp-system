@@ -20,13 +20,6 @@
             show-password
           />
         </el-form-item>
-        <el-form-item>
-          <el-select v-model="form.tenant" style="width: 100%" placeholder="选择租户">
-            <el-option label="默认租户" value="default" />
-            <el-option label="租户 A" value="tenant-a" />
-            <el-option label="租户 B" value="tenant-b" />
-          </el-select>
-        </el-form-item>
 
         <div class="row">
           <el-checkbox v-model="form.remember">记住我</el-checkbox>
@@ -68,7 +61,6 @@ const loading = ref(false)
 const form = reactive({
   username: '',
   password: '',
-  tenant: 'default',
   remember: false,
 })
 

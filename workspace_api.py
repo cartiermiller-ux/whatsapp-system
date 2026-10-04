@@ -18,15 +18,15 @@ import account_export_api as exports
 
 router = APIRouter(prefix='/api/v1/workspace')
 
-class Collection(m.Base):
+class Collection(m.TenantOwned, m.Base):
     __tablename__ = 'resource_collection'
-    __table_args__ = (UniqueConstraint('kind', 'name'),)
+    __table_args__ = (UniqueConstraint('tenant_id', 'kind', 'name', name='uq_collection_tenant_kind_name'),)
     id = Column(Integer, primary_key=True)
     kind = Column(String(20), index=True)
     name = Column(String(100))
     created_at = Column(DateTime, default=datetime.now)
 
-class Inspection(m.Base):
+class Inspection(m.TenantOwned, m.Base):
     __tablename__ = 'account_inspection'
     id = Column(Integer, primary_key=True)
     name = Column(String(100))

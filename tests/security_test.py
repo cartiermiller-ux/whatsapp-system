@@ -21,7 +21,7 @@ class SecurityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.client = TestClient(m.app)
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             cls.operator = m.create_user(db, 'security_operator', 'test-pass', role='operator', tenant='default').id
             cls.agent = m.create_user(db, 'security_agent', 'test-pass', role='agent_admin', tenant='default').id
             cls.other = m.create_user(db, 'security_other', 'test-pass', role='operator', tenant='other').id
@@ -31,6 +31,12 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         return {'Authorization': 'Bearer ' + response.json()['data']['token']}
 
+    @classmethod
+    def tearDownClass(cls):
+        cls.client.close()
+        m.engine.dispose()
+        temporary.cleanup()
+
     def test_no_provision_or_legacy_impersonation(self):
         self.assertFalse(m.AUTO_PROVISION_USERS)
         self.assertFalse(m.real_send_enabled())
@@ -39,7 +45,7 @@ class SecurityTests(unittest.TestCase):
             self.assertEqual(self.client.post('/api/v1/auth/login', json={'username': username, 'password': 'any-pass'}).status_code, 401)
         for token in ['mock-token-admin', 'mock-token-security_agent', '1.forged']:
             self.assertEqual(self.client.get('/api/v1/me', headers={'Authorization': 'Bearer ' + token}).status_code, 401)
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             self.assertIsNone(db.query(m.User).filter_by(username='unprovisioned').first())
 
     def test_all_business_routes_require_auth(self):
@@ -82,6 +88,39 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/v1/auth/logout', headers=auth).status_code,200)
         self.assertEqual(self.client.get('/api/v1/me', headers=auth).status_code,401)
 
+    def test_token_revocation_acceptance(self):
+        username = 'token_acceptance_fixture'
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
+            m.create_user(db, username, 'admin123', role='operator', tenant='default')
+
+        def expect(label, response, status):
+            self.assertEqual(response.status_code, status, label)
+            print('[PASS]', label)
+
+        def login(password, label):
+            response = self.client.post('/api/v1/auth/login',
+                json={'username': username, 'password': password})
+            expect(label, response, 200)
+            return {'Authorization': 'Bearer ' + response.json()['data']['token']}
+
+        auth = login('admin123', '登录成功')
+        expect('旧 token 可访问 /me', self.client.get('/api/v1/me', headers=auth), 200)
+        expect('登出成功', self.client.post('/api/v1/auth/logout', headers=auth), 200)
+        expect('登出后旧 token 失效', self.client.get('/api/v1/me', headers=auth), 401)
+        old_auth = login('admin123', '重新登录成功')
+        second_auth = login('admin123', '第二个会话登录成功')
+        self.assertNotEqual(old_auth, second_auth)
+        expect('改密成功', self.client.post('/api/v1/me/password', headers=old_auth,
+            json={'old_password': 'admin123', 'new_password': 'admin1234'}), 200)
+        for label, headers in [('改密前旧 token 失效', old_auth),
+                               ('同账号其他旧会话失效', second_auth)]:
+            expect(label, self.client.get('/api/v1/me', headers=headers), 401)
+        expect('旧密码不能登录', self.client.post('/api/v1/auth/login',
+            json={'username': username, 'password': 'admin123'}), 401)
+        new_auth = login('admin1234', '新密码可登录')
+        expect('新 token 可访问 /me', self.client.get('/api/v1/me', headers=new_auth), 200)
+        expect('新会话登出成功', self.client.post('/api/v1/auth/logout', headers=new_auth), 200)
+
     def test_audit_covers_security_and_settings_operations(self):
         auth = self.headers()
         response = self.client.post('/api/v1/admin/users', headers=auth, json={'username':'audit_fixture','password':'test-pass','role':'operator'})
@@ -97,7 +136,7 @@ class SecurityTests(unittest.TestCase):
             json={'old_password':'test-pass','new_password':'updated-test-pass'}).status_code,200)
         self.assertEqual(self.client.get('/api/v1/me',headers=fixture_auth).status_code,401)
         self.assertEqual(self.client.post('/api/v1/auth/logout',headers=auth).status_code,200)
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             actions = {row.action for row in db.query(m.OperationLog).all()}
         self.assertTrue({'login','logout','create_user','delete_user','update_settings','create_recharge','update_password'}.issubset(actions))
 

@@ -36,9 +36,10 @@ class OperationsTests(unittest.TestCase):
         cls.client.__enter__()
         response = cls.client.post('/api/v1/auth/login', json={'username': m.DEFAULT_ADMIN_USERNAME, 'password': m.DEFAULT_ADMIN_PASSWORD})
         cls.client.headers['Authorization'] = 'Bearer ' + response.json()['data']['token']
-        with m.SessionLocal() as db:
-            account = m.AccountPool(number_id=1, status='normal', health_score=100, created_at=datetime.now()-timedelta(days=10), session_name='test-auth')
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             number = m.NumberPool(phone_number='8613800000011', status='pending')
+            db.add(number); db.flush()
+            account = m.AccountPool(number_id=number.id, status='normal', health_score=100, created_at=datetime.now()-timedelta(days=10), session_name='test-auth')
             group = m.ResourceGroup(group_jid='12345@g.us', group_name='测试群', can_invite=True)
             db.add_all([account, number, group]); db.commit()
             cls.account, cls.number, cls.group = account.id, number.id, group.id
@@ -80,7 +81,7 @@ class OperationsTests(unittest.TestCase):
         task = self.create(target_ids=[self.number, 999999])
         detail = self.detail('mass-send', task)
         self.assertEqual((detail['status'], detail['accepted'], detail['failed']), ('failed', 1, 1))
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             db.add(m.NumberPool(id=999999, phone_number='8613800000099', status='pending')); db.commit()
         response = self.client.post(f'/api/v1/tasks/mass-send/{task}/retry')
         self.assertEqual(response.status_code, 200, response.text)
@@ -99,12 +100,12 @@ class OperationsTests(unittest.TestCase):
 
     def test_real_send_receipt_monotonic_and_idempotent(self):
         task = self.create(scheduled_at=(datetime.now()+timedelta(days=1)).isoformat())
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             row = db.get(m.MassSendTask, task); row.scheduled_at=None; row.mode='real'; db.commit()
         with patch.object(ops, 'activate_account'), patch.object(m, 'wasock_request', return_value={'success': True, 'message_id':'receipt-test'}), patch.object(m,'send_interval_seconds',return_value=0):
             ops.run_task('mass-send', task)
         self.assertEqual(self.detail('mass-send',task)['delivered'],0)
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             for status in ['read','delivered','read']:
                 ops.reconcile_receipt('receipt-test','8613800000011@s.whatsapp.net',status,db)
         detail=self.detail('mass-send',task)
@@ -112,7 +113,7 @@ class OperationsTests(unittest.TestCase):
 
     def test_timeout_never_automatically_retries(self):
         task = self.create(scheduled_at=(datetime.now()+timedelta(days=1)).isoformat())
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             row=db.get(m.MassSendTask,task);row.scheduled_at=None;row.mode='real';db.commit()
         with patch.object(ops,'activate_account'),patch.object(m,'wasock_request',side_effect=TimeoutError('lost response')),patch.object(m,'send_interval_seconds',return_value=0):
             ops.run_task('mass-send',task)
@@ -125,7 +126,7 @@ class OperationsTests(unittest.TestCase):
         self.assertEqual(self.client.patch(path,json={'status':'succeeded','note':'重复核对不应再次计数'}).status_code,409)
 
     def test_account_presentation_and_guarded_operations(self):
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             number = m.NumberPool(phone_number='12025550101', status='pending')
             db.add(number); db.flush()
             account = m.AccountPool(number_id=number.id, status='normal', health_score=82, nurture_stage='nurturing', nurture_started_at=datetime.now()-timedelta(days=2))
@@ -142,14 +143,14 @@ class OperationsTests(unittest.TestCase):
         self.assertEqual(self.client.delete(f'/api/v1/accounts/{account_id}').status_code,409)
         self.client.post(f'/api/v1/tasks/mass-send/{task}/cancel')
         self.assertEqual(self.client.delete(f'/api/v1/accounts/{account_id}').status_code,200)
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             self.assertEqual(db.get(m.ProxyPool,proxy_id).status,'free')
 
     def test_resource_center_uses_real_linked_accounts_and_sources(self):
         response=self.client.post('/api/v1/numbers/import',json=[{'phone':'12025550991','source_type':'physical','source_channel':'平台 A','region':'US'}, {'phone':'12025550992','source_type':'physical','source_channel':'平台 A'}])
         self.assertEqual(response.status_code,200,response.text)
         self.client.post('/api/v1/groups/import',json=[{'group_name':'来源群','group_jid':'654321@g.us','source_channel':'平台 A'}])
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             number=db.query(m.NumberPool).filter_by(phone_number='12025550992').one()
             account=m.AccountPool(number_id=number.id,status='normal',session_name='resource-test')
             db.add(account);db.flush();number.account_id=account.id;number.status='success';db.commit()
@@ -180,7 +181,7 @@ class OperationsTests(unittest.TestCase):
         sessions={}
         def session(name=None):
             return sessions.setdefault(name,FakeSession(name))
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             user=m.create_user(db,'multi-agent','test-password',role='agent_admin')
         token=self.client.post('/api/v1/auth/login',json={'username':'multi-agent','password':'test-password'}).json()['data']['token']
         headers={'Authorization':'Bearer '+token}
@@ -204,11 +205,11 @@ class OperationsTests(unittest.TestCase):
         import threading
         from concurrent.futures import ThreadPoolExecutor
         from whatsapp_session import auth_path
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             account=m.AccountPool(number_id=self.number,status='normal',health_score=100,created_at=datetime.now()-timedelta(days=10),session_name='concurrent-second')
             db.add(account);db.commit();second_id=account.id
         task_ids=[self.create(account_ids=[account_id],scheduled_at=(datetime.now()+timedelta(days=1)).isoformat()) for account_id in (self.account,second_id)]
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             for task_id in task_ids:
                 task=db.get(m.MassSendTask,task_id);task.mode='real';task.scheduled_at=None
             db.commit()
@@ -227,11 +228,11 @@ class OperationsTests(unittest.TestCase):
         self.assertTrue(all(self.detail('mass-send',task_id)['status']=='done' for task_id in task_ids))
 
     def test_receipts_are_scoped_to_the_sending_account(self):
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             account=m.AccountPool(number_id=self.number,status='normal',health_score=100)
             db.add(account);db.commit();second_id=account.id
         task_ids=[self.create(account_ids=[account_id]) for account_id in (self.account,second_id)]
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             rows=db.query(m.TaskExecution).filter(m.TaskExecution.task_id.in_(task_ids)).all()
             for row in rows:row.message_id='collision-multi-account'
             db.commit()
@@ -239,7 +240,7 @@ class OperationsTests(unittest.TestCase):
             ops.reconcile_receipt('collision-multi-account',target,'read',db,self.account)
         self.assertEqual(self.detail('mass-send',task_ids[0])['read'],1)
         self.assertEqual(self.detail('mass-send',task_ids[1])['read'],0)
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             with self.assertRaises(m.HTTPException):
                 ops.reconcile_receipt('collision-multi-account',target,'read',db)
 
@@ -252,16 +253,16 @@ class OperationsTests(unittest.TestCase):
             def snapshot(self):return SessionState(auth_name=self.name,status=self.status,node_running=True).to_dict()
         sessions={}
         def get(name=None):return sessions.setdefault(name,FakeSession(name))
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             account=m.AccountPool(number_id=self.number,status='normal',session_name='shared-account')
             db.add(account);db.commit();account_id=account.id
         with patch.object(m,'get_session',side_effect=get):
             response=self.client.post('/api/v1/whatsapp/switch',json={'account_id':account_id})
             self.assertEqual(response.status_code,200,response.text)
             self.assertEqual(self.client.post('/api/v1/whatsapp/stop',json={'auth_name':'shared-account'}).status_code,200)
-            with m.SessionLocal() as db:self.assertFalse(db.get(m.AccountPool,account_id).session_enabled)
+            with m.SessionLocal(info={'tenant_id': 1}) as db:self.assertFalse(db.get(m.AccountPool,account_id).session_enabled)
             self.assertEqual(self.client.post('/api/v1/whatsapp/switch',json={'account_id':account_id}).status_code,200)
-            with m.SessionLocal() as db:self.assertTrue(db.get(m.AccountPool,account_id).session_enabled)
+            with m.SessionLocal(info={'tenant_id': 1}) as db:self.assertTrue(db.get(m.AccountPool,account_id).session_enabled)
 
     def test_receipt_auth_required(self):
         self.assertEqual(self.client.post('/api/v1/providers/receipts',json={'message_id':'x','target':'y','status':'read'}).status_code,401)
@@ -293,7 +294,7 @@ class OperationsTests(unittest.TestCase):
         (session/'creds.json').write_bytes(raw)
         (session/'session-123.0.json').write_text('{"test":"key"}')
         (session/'receipts.json').write_text('{"internal":"not-exported"}')
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             account = db.get(m.AccountPool, self.account); account.session_name = str(session); db.commit()
         response = self.client.post(f'/api/v1/accounts/{self.account}/convert')
         self.assertEqual(response.status_code, 200, response.text)
@@ -309,7 +310,7 @@ class OperationsTests(unittest.TestCase):
         self.assertEqual(self.client.get(f'/api/v1/accounts/{self.account}/export').status_code, 409)
 
     def test_account_export_requires_conversion(self):
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             account = m.AccountPool(number_id=self.number, status='normal'); db.add(account); db.commit(); account_id=account.id
         self.assertEqual(self.client.post(f'/api/v1/accounts/{account_id}/convert').status_code,409)
         self.assertEqual(self.client.get(f'/api/v1/accounts/{account_id}/export').status_code,409)
@@ -317,7 +318,7 @@ class OperationsTests(unittest.TestCase):
 
     def test_payment_signature_matching_and_no_duplicate_credit(self):
         os.environ['PAYMENT_WEBHOOK_SECRET']='test-verifier-secret'
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             order=m.RechargeOrder(order_no='SIGNED-TEST',amount=10,currency='USDT',chain='TRC20',address='test-address',status='pending',expire_at=datetime.now()+timedelta(hours=1))
             db.add(order);db.commit();order_id=order.id
             before=m.current_balance(db)
@@ -331,20 +332,20 @@ class OperationsTests(unittest.TestCase):
         self.assertEqual(deliver({**data,'confirmations':1}).status_code,409)
         self.assertEqual(deliver(data).status_code,200)
         self.assertTrue(deliver(data).json()['data']['duplicate'])
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             self.assertEqual(m.current_balance(db),before+10)
             self.assertEqual(db.query(m.BalanceTransaction).filter_by(remark='充值订单 SIGNED-TEST 核验回调到账').count(),1)
 
     def test_bill_once_for_success_and_not_for_failed_targets(self):
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             m.upsert_setting(db,'billing_enabled','1');db.commit()
             m.add_transaction(db,'recharge',1,remark='test credit')
         task = self.create(target_ids=[self.number,1234567], billing_country='CN', scheduled_at=(datetime.now()+timedelta(days=1)).isoformat())
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             row=db.get(m.MassSendTask,task);row.mode='real';row.scheduled_at=None;db.commit()
         with patch.object(ops,'activate_account'),patch.object(m,'wasock_request',return_value={'success':True,'message_id':'billing-msg'}),patch.object(m,'send_interval_seconds',return_value=0):
             ops.run_task('mass-send',task)
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': 1}) as db:
             self.assertEqual(db.query(m.BalanceTransaction).filter_by(type='consume',task_id=task).count(),1)
             amount=db.query(m.BalanceTransaction).filter_by(type='consume',task_id=task).first().amount
             self.assertEqual(str(amount),'-0.006000')

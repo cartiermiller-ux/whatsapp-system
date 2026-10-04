@@ -263,13 +263,19 @@ def charge_success(db, task, kind, row):
 
 
 def run_task(kind, task_id, mode=None):
+    # Discovery may span tenants; execution and billing always use the task owner.
+    with m.system_session() as lookup:
+        tenant_id = lookup.query(task_model(kind).tenant_id).filter_by(id=task_id).scalar()
+        tenant = lookup.get(m.Tenant, tenant_id) if tenant_id else None
+        if not tenant or tenant.status != 'active':
+            return
     key = (kind, task_id)
     with _lock_guard:
         lock = _task_locks.setdefault(key, threading.Lock())
     if not lock.acquire(blocking=False):
         return
     try:
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': tenant_id}) as db:
             with _channel_lock:
                 task = get_task(kind, task_id, db)
                 if _stop.is_set() or task.status not in ('pending','running'):
@@ -287,6 +293,11 @@ def run_task(kind, task_id, mode=None):
             for row_id in row_ids:
                 db.expire_all()
                 task = get_task(kind, task_id, db)
+                tenant = db.get(m.Tenant, tenant_id)
+                if not tenant or tenant.status != 'active':
+                    task.status, task.last_error = 'paused', '租户已停用，任务暂停'
+                    db.commit()
+                    break
                 row = db.get(m.TaskExecution, row_id)
                 if task.status != 'running' or _stop.is_set():
                     break
@@ -354,7 +365,7 @@ def run_task(kind, task_id, mode=None):
                     write_log(db,kind,task_id,task.status,f'任务结束，失败 {task.failed} 个目标')
                 db.commit()
     except Exception as exc:
-        with m.SessionLocal() as db:
+        with m.SessionLocal(info={'tenant_id': tenant_id}) as db:
             task = db.get(task_model(kind), task_id)
             if task:
                 for interrupted in db.query(m.TaskExecution).filter_by(task_kind=kind,task_id=task_id,status='executing'):
@@ -409,6 +420,8 @@ def apply_saved_receipt(db, row):
 def reconcile_receipt(message_id, target, status, db, account_id=None):
     if not message_id or not target or status not in ('delivered', 'read'):
         raise HTTPException(422, '回执字段无效')
+    if account_id is not None and not db.get(m.AccountPool, account_id):
+        raise HTTPException(422, '回执账号不存在或不属于当前租户')
     q = db.query(m.TaskExecution).filter_by(message_id=message_id, target=target, task_kind='mass-send', status='succeeded')
     if account_id is not None:
         q = q.filter_by(account_id=account_id)
@@ -452,6 +465,18 @@ def receipt_callback(req: ReceiptRequest, authorization: str = Header(''), db=De
     expected = os.environ.get('RECEIPT_WEBHOOK_TOKEN', '')
     if not expected or not secrets.compare_digest(authorization, 'Bearer ' + expected):
         raise HTTPException(401, '回执认证失败')
+    with m.system_session() as lookup:
+        if req.account_id is not None:
+            tenant_id = lookup.query(m.AccountPool.tenant_id).filter_by(id=req.account_id).scalar()
+        else:
+            owners = lookup.query(m.TaskExecution.account_id, m.TaskExecution.tenant_id).filter_by(
+                message_id=req.message_id, target=req.target, task_kind='mass-send', status='succeeded').distinct().all()
+            if len(owners) != 1:
+                raise HTTPException(422, '回执未唯一匹配账号，请指定 account_id')
+            req.account_id, tenant_id = owners[0]
+    if tenant_id is None:
+        raise HTTPException(422, '回执账号不存在')
+    m.bind_tenant(db, tenant_id)
     with _channel_lock:
         return {'code': 0, 'data': {'matched': reconcile_receipt(req.message_id, req.target, req.status, db, req.account_id)}}
 
@@ -569,14 +594,16 @@ def poll_receipts():
             result = m.wasock_request({'action': 'getReceipts', 'offset': offset, 'limit': 500}, timeout=2)
             if not result.get('success'):
                 return
-            with _channel_lock, m.SessionLocal() as db:
+            with m.system_session() as lookup:
                 from whatsapp_session import auth_path
-                account_by_path = {str(auth_path(a.session_name).resolve()):a.id for a in db.query(m.AccountPool).filter(m.AccountPool.session_name != '', m.AccountPool.session_name.isnot(None))}
-                for receipt in result.get('receipts', []):
-                    name = receipt.get('auth_name')
-                    account_id = account_by_path.get(str(auth_path(name).resolve())) if name else None
-                    if name and account_id is None:
-                        continue
+                account_by_path = {str(auth_path(a.session_name).resolve()):(a.id, a.tenant_id) for a in lookup.query(m.AccountPool).filter(m.AccountPool.session_name != '', m.AccountPool.session_name.isnot(None))}
+            for receipt in result.get('receipts', []):
+                name = receipt.get('auth_name')
+                owner = account_by_path.get(str(auth_path(name).resolve())) if name else None
+                if owner is None:
+                    continue
+                account_id, tenant_id = owner
+                with _channel_lock, m.SessionLocal(info={'tenant_id': tenant_id}) as db:
                     reconcile_receipt(receipt['message_id'],receipt['target'],receipt['status'],db,account_id)
             next_offset = result.get('next_offset')
             if next_offset is None or next_offset <= offset:
@@ -589,10 +616,10 @@ def poll_receipts():
 def restore_sessions():
     if not m.WHATSAPP_SESSION_AVAILABLE:
         return
-    with m.SessionLocal() as db:
-        names = [(a.session_name,a.number_id) for a in db.query(m.AccountPool).filter_by(status='normal',session_enabled=True) if a.session_name]
-        proxies = {n.id:n.proxy_ip for n in db.query(m.NumberPool)}
-    for name,number_id in names:
+    with m.system_session() as lookup:
+        active = {t.id for t in lookup.query(m.Tenant).filter_by(status='active')}
+        names = [(a.session_name,a.tenant_id) for a in lookup.query(m.AccountPool).filter_by(status='normal',session_enabled=True) if a.session_name and a.tenant_id in active]
+    for name,tenant_id in names:
         if _stop.is_set():
             break
         if not m.read_paired_phone(name):
@@ -604,7 +631,9 @@ def restore_sessions():
         if not lock.acquire(blocking=False):
             continue
         try:
-            session.start(name,proxy_override=proxies.get(number_id) or None)
+            from account_management_api import proxy_for_session
+            with m.SessionLocal(info={'tenant_id': tenant_id}) as db:
+                session.start(name,proxy_override=proxy_for_session(db, name))
         finally:
             lock.release()
 
@@ -612,7 +641,7 @@ def restore_sessions():
 def scheduler_loop():
     restored_at = 0
     while not _stop.wait(2):
-        with m.SessionLocal() as db:
+        with m.system_session() as db:
             for kind in ('mass-send', 'pull-group'):
                 tasks = db.query(task_model(kind)).filter(task_model(kind).status == 'pending', task_model(kind).mode.in_(['real', 'mock'])).all()
                 for task in tasks:
@@ -631,22 +660,25 @@ def scheduler_loop():
 def startup():
     global _scheduler
     _stop.clear()
-    with m.SessionLocal() as db:
-        # An interrupted external call may have succeeded: surface uncertainty instead of duplicating it.
-        for row in db.query(m.TaskExecution).filter_by(status='executing').all():
-            row.status = 'uncertain'
-            row.error = '进程中断，通道执行结果需人工核对'
-        for kind in ('mass-send', 'pull-group'):
-            for legacy in db.query(task_model(kind)).filter(task_model(kind).status.in_(['pending', 'running']), task_model(kind).mode == '').all():
-                legacy.status = 'paused'
-                legacy.last_error = '历史任务缺少执行记录，请核对后手动恢复'
-            for task in db.query(task_model(kind)).filter_by(status='running').all():
-                rows = sync_counts(kind, task, db)
-                if any(r.status == 'uncertain' for r in rows):
-                    task.status, task.last_error = 'failed', '存在进程中断的执行记录，请核对后处理'
-                else:
-                    task.status = 'pending'
-        db.commit()
+    with m.system_session() as lookup:
+        tenant_ids = [t.id for t in lookup.query(m.Tenant).all()]
+    for tenant_id in tenant_ids:
+        with m.SessionLocal(info={'tenant_id': tenant_id}) as db:
+            # An interrupted external call may have succeeded: surface uncertainty instead of duplicating it.
+            for row in db.query(m.TaskExecution).filter_by(status='executing').all():
+                row.status = 'uncertain'
+                row.error = '进程中断，通道执行结果需人工核对'
+            for kind in ('mass-send', 'pull-group'):
+                for legacy in db.query(task_model(kind)).filter(task_model(kind).status.in_(['pending', 'running']), task_model(kind).mode == '').all():
+                    legacy.status = 'paused'
+                    legacy.last_error = '历史任务缺少执行记录，请核对后手动恢复'
+                for task in db.query(task_model(kind)).filter_by(status='running').all():
+                    rows = sync_counts(kind, task, db)
+                    if any(r.status == 'uncertain' for r in rows):
+                        task.status, task.last_error = 'failed', '存在进程中断的执行记录，请核对后处理'
+                    else:
+                        task.status = 'pending'
+            db.commit()
     _scheduler = threading.Thread(target=scheduler_loop, daemon=True)
     _scheduler.start()
 

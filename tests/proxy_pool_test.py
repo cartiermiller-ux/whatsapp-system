@@ -7,7 +7,7 @@ with tempfile.TemporaryDirectory() as folder:
     import main as m
     import whatsapp_session as w
     import service_config
-    with m.SessionLocal() as db:
+    with m.SessionLocal(info={'tenant_id': 1}) as db:
         with patch.dict(os.environ,{'WA_PROXY_URL':'http://test:secret@127.0.0.1:8123'}):
             m.migrate_exit_proxy(db)
             m.migrate_exit_proxy(db)

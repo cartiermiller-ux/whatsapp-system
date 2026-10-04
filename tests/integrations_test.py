@@ -161,7 +161,7 @@ check("代理列表返回 6 条", len(rows) == 6, len(rows))
 check("代理地址含认证信息", any("@" in x["address"] for x in rows), rows[0])
 check("默认都是空闲", all(x["status"] == "free" for x in rows))
 
-db = main.SessionLocal()
+db = main.SessionLocal(info={'tenant_id': 1})
 number = main.NumberPool(phone_number="8613800000009", source_type="virtual", number_segment="861380")
 db.add(number)
 db.commit()
@@ -273,7 +273,7 @@ r = api("GET", "/purchase/orders")
 check("删除后列表为空", r.json()["data"]["total"] == 0, r.json()["data"])
 
 section("6 注册时自动分配代理")
-db = main.SessionLocal()
+db = main.SessionLocal(info={'tenant_id': 1})
 main.ProxyPool.query.delete() if False else None
 for row in db.query(main.ProxyPool).all():
     db.delete(row)

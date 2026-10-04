@@ -72,15 +72,7 @@ def setting(name: str, default: str = "") -> str:
 
 def proxy_url() -> str:
     """出口代理地址，形如 socks5://127.0.0.1:10808 或 http://127.0.0.1:7890。"""
-    import sys
-    app = sys.modules.get('main')
-    if app and hasattr(app, 'ProxyPool') and hasattr(app, 'SessionLocal'):
-        with app.SessionLocal() as db:
-            row = db.query(app.ProxyPool).filter_by(is_default=True).first()
-            if row:
-                if row.provider == 'mock' or row.status == 'disabled':
-                    raise SessionError('默认出口代理不可用，请到资源对接 → 代理池更换默认出口')
-                return row.address
+    # Tenant pool defaults are resolved by the scoped caller and passed as override.
     return setting("WA_PROXY_URL", "").strip()
 
 

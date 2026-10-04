@@ -30,7 +30,7 @@ import { useAuthStore } from '@/stores/auth'
 import type { ProviderItem, ServiceConfigField, ServiceHealth } from '@/types/api'
 import { PROVIDER_KIND_LABEL, formatDateTime } from '@/utils/format'
 const auth = useAuthStore()
-const isAdmin = computed(() => ['super_admin', 'agent_admin'].includes(auth.user?.role || ''))
+const isAdmin = computed(() => auth.user?.role === 'super_admin')
 const providers = ref<ProviderItem[]>([]), fields = ref<ServiceConfigField[]>([]), health = ref<ServiceHealth | null>(null)
 const form = reactive<Record<string, string>>({}), dirty = reactive<Record<string, boolean>>({})
 const loading = ref(false), checking = ref(false), saving = ref(false), error = ref('')

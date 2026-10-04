@@ -1,4 +1,5 @@
 import os
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 import sys
@@ -12,14 +13,14 @@ class BackupTests(unittest.TestCase):
     def test_wal_snapshot_and_uncommitted_write(self):
         with tempfile.TemporaryDirectory() as directory:
             source=Path(directory)/'source.db'
-            with sqlite3.connect(source) as connection:
+            with closing(sqlite3.connect(source)) as connection:
                 connection.execute('PRAGMA journal_mode=WAL')
                 connection.execute('CREATE TABLE sample(id INTEGER PRIMARY KEY, value TEXT)')
                 connection.execute('INSERT INTO sample VALUES (1,?)',('committed',))
                 connection.commit()
                 connection.execute('INSERT INTO sample VALUES (2,?)',('uncommitted',))
                 snapshot=backup_database('sqlite:///'+source.as_posix(),Path(directory)/'backup')
-                with sqlite3.connect(snapshot) as restore:
+                with closing(sqlite3.connect(snapshot)) as restore:
                     self.assertEqual(restore.execute('SELECT * FROM sample').fetchall(),[(1,'committed')])
                     self.assertEqual(restore.execute('PRAGMA integrity_check').fetchone()[0],'ok')
                 if os.name!='nt':self.assertEqual(snapshot.stat().st_mode & 0o777,0o600)

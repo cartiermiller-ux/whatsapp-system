@@ -1,5 +1,6 @@
 """Consistent database backups; PostgreSQL passwords never enter command arguments."""
 import argparse
+from contextlib import closing
 from datetime import datetime, timezone
 import os
 from pathlib import Path
@@ -31,8 +32,8 @@ def backup_database(url, directory):
             source = Path(parsed.database).resolve()
             if not source.is_file():
                 raise ValueError('Source database does not exist')
-            with sqlite3.connect(source.as_uri() + '?mode=ro', uri=True) as connection:
-                with sqlite3.connect(temporary) as output:
+            with closing(sqlite3.connect(source.as_uri() + '?mode=ro', uri=True)) as connection:
+                with closing(sqlite3.connect(temporary)) as output:
                     connection.backup(output)
                     if output.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
                         raise ValueError('SQLite backup integrity check failed')
