@@ -37,8 +37,12 @@
             <el-button @click="resetProxyFilters">重置</el-button>
             <el-button :loading="syncing" @click="syncProxies">同步代理</el-button>
             <el-button :icon="Upload" @click="importVisible = true">导入代理</el-button>
+            <el-button type="danger" plain :disabled="!selectedProxyIds.length" @click="removeProxies">
+              删除所选{{ selectedProxyIds.length ? `(${selectedProxyIds.length})` : '' }}
+            </el-button>
           </div>
-          <el-table v-loading="proxyLoading" :data="proxyRows" stripe>
+          <el-table v-loading="proxyLoading" :data="proxyRows" stripe @selection-change="onProxySelectionChange">
+            <el-table-column type="selection" width="50" />
             <el-table-column prop="id" label="ID" width="70" />
             <el-table-column label="代理地址" min-width="250" show-overflow-tooltip><template #default="{row}"><div>{{row.address}}</div><small class="muted">{{row.provider==='mock'?'模拟代理':row.provider}}<template v-if="row.bound_number_id"> · 号码 #{{row.bound_number_id}}</template></small></template></el-table-column>
             <el-table-column label="协议" width="90">
@@ -113,8 +117,12 @@
           <el-button :icon="Search" @click="reloadSms">查询</el-button>
           <el-button @click="smsFilters.status = ''; reloadSms()">重置</el-button>
           <el-button type="primary" :icon="Plus" @click="smsDialogVisible = true">取号</el-button>
+          <el-button type="danger" plain :disabled="!selectedSmsIds.length" @click="removeSmsOrders">
+            删除所选{{ selectedSmsIds.length ? `(${selectedSmsIds.length})` : '' }}
+          </el-button>
         </div>
-          <el-table v-loading="smsLoading" :data="smsRows" stripe>
+          <el-table v-loading="smsLoading" :data="smsRows" stripe @selection-change="onSmsSelectionChange">
+            <el-table-column type="selection" width="50" />
             <el-table-column prop="id" label="ID" width="70" />
             <el-table-column prop="phone" label="手机号" min-width="140" />
             <el-table-column prop="service" label="服务" width="80" />
@@ -399,6 +407,32 @@ const proxyPage = ref(1)
 const proxySize = ref(20)
 const proxyFilters = reactive({ status: '', country: '', proxy_type: '', group_id: undefined as number|undefined })
 const proxyGroups=ref<ResourceCollection[]>([]),importProxyType=ref('static'),importProxyGroup=ref<number>(),groupAssignVisible=ref(false),assignedGroup=ref<number>(),assignedProxy=ref(0)
+const selectedProxyIds = ref<number[]>([])
+
+function onProxySelectionChange(rows: ProxyRow[]) {
+  selectedProxyIds.value = rows.map((r) => r.id)
+}
+
+async function removeProxies() {
+  if (!selectedProxyIds.value.length) return
+  try {
+    await ElMessageBox.confirm(
+      `确认删除 ${selectedProxyIds.value.length} 个代理？正在使用的代理会先释放再删除。`,
+      '批量删除代理',
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    const res = await integrationApi.removeProxies(selectedProxyIds.value)
+    ElMessage.success(`已删除 ${res.deleted} 个代理`)
+    selectedProxyIds.value = []
+    await loadProxies()
+  } catch {
+    /* 拦截器已提示 */
+  }
+}
 async function loadProxyGroups(){proxyGroups.value=await workspaceApi.groups('proxy')}
 function openProxyGroup(row:ProxyRow){assignedProxy.value=row.id;assignedGroup.value=row.group_id||undefined;groupAssignVisible.value=true}
 async function saveProxyGroup(){await workspaceApi.assignGroup('proxy',[assignedProxy.value],assignedGroup.value||null);groupAssignVisible.value=false;await loadProxies()}
@@ -553,6 +587,32 @@ const smsCreating = ref(false)
 const smsBusy = ref<number | null>(null)
 const smsWaiting = ref<number | null>(null)
 const smsForm = reactive({ service: 'wa', country: 'ID' })
+const selectedSmsIds = ref<number[]>([])
+
+function onSmsSelectionChange(rows: SmsOrderRow[]) {
+  selectedSmsIds.value = rows.map((r) => r.id)
+}
+
+async function removeSmsOrders() {
+  if (!selectedSmsIds.value.length) return
+  try {
+    await ElMessageBox.confirm(
+      `确认删除 ${selectedSmsIds.value.length} 个接码订单？只能删除已完结的订单（已完成/已取消/已过期）。`,
+      '批量删除接码订单',
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    const res = await integrationApi.removeSmsOrders(selectedSmsIds.value)
+    ElMessage.success(`已删除 ${res.deleted} 个接码订单`)
+    selectedSmsIds.value = []
+    await loadSms()
+  } catch {
+    /* 拦截器已提示 */
+  }
+}
 
 function smsStatusType(value: string) {
   switch (value) {

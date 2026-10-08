@@ -18,14 +18,14 @@
       <el-select v-model="filters.stage" placeholder="阶段" clearable style="width: 140px"><el-option v-for="(label, key) in NURTURE_STAGE_LABEL" :key="key" :value="key" :label="label" /></el-select>
       <el-button @click="resetFilters">重置</el-button>
       <el-button type="primary" :icon="Iphone" class="login-action" @click="loginVisible = true">扫码登录 WhatsApp</el-button>
-      <el-button v-if="isAdmin" @click="importVisible=true">导入登录会话</el-button>
+      <el-button v-if="isAdmin" @click="importVisible=true">导入账号</el-button>
     </div>
     <div v-if="isAdmin && selected.length" class="actions batch-actions"><span>已选 {{ selected.length }} 个账号</span><el-button @click="assignVisible=true">分配分组</el-button><el-button :loading="converting" @click="convertSelected">验证完整会话</el-button><el-button :loading="exporting" @click="exportSelected">导出完整会话 ZIP</el-button></div>
     <el-alert v-if="conversionFailures.length" type="warning" :closable="false" title="部分账号转换失败" :description="conversionFailures.map(item => `${accountName(item.id)}：${item.reason}`).join('；')" class="block-gap" />
     <el-table v-loading="loading" :data="pagedAccounts" @selection-change="selected = $event" class="account-table" row-key="id">
       <el-table-column v-if="isAdmin" type="selection" width="44" />
       <el-table-column label="账号" min-width="190">
-        <template #default="{ row }"><div class="account-identity"><strong>{{ row.phone_number ? maskedPhone(row.phone_number) : accountName(row.id) }}</strong><span class="cell-secondary">{{ row.phone_number ? `${accountName(row.id)} · 号码 #${row.number_id}` : `号码 #${row.number_id}` }}</span><span class="identity-note">{{ row.full_params_ready ? '全参已转换' : row.session_name ? '已关联手机账号' : '尚未关联手机账号' }}</span></div></template>
+        <template #default="{ row }"><div class="account-identity"><strong>{{ row.phone_number ? maskedPhone(row.phone_number) : accountName(row.id) }}</strong><span class="cell-secondary">{{ row.phone_number ? `${accountName(row.id)} · 号码 #${row.number_id}` : `号码 #${row.number_id}` }}</span><span v-if="isMobile(row)" class="identity-note">{{ connectionLabel(row.connection_state) }} · 有效在线 {{ Math.floor((row.online_seconds||0)/60) }} 分钟</span><span v-if="isMobile(row) && row.mobile_error" class="identity-note text-danger">{{ mobileError(row.mobile_error) }}</span><span class="identity-note">{{ row.device_type === 'full_params' ? '手机全参账号' : row.device_type === 'six_segment' ? '六段手机账号' : row.full_params_ready ? '完整会话已验证' : row.session_name ? '已关联手机账号' : '尚未关联手机账号' }}</span></div></template>
       </el-table-column>
       <el-table-column label="健康度" min-width="145">
         <template #default="{ row }">
@@ -35,7 +35,7 @@
           </el-popover>
         </template>
       </el-table-column>
-      <el-table-column label="分组 / 类型" min-width="150"><template #default="{row}"><div>{{groups.find(g=>g.id===row.group_id)?.name||'未分组'}}</div><small class="cell-secondary">{{row.account_type==='business'?'商业号':'个人号'}} · 关联设备</small></template></el-table-column>
+      <el-table-column label="分组 / 类型" min-width="150"><template #default="{row}"><div>{{groups.find(g=>g.id===row.group_id)?.name||'未分组'}}</div><small class="cell-secondary">{{row.account_type==='business'?'商业号':'个人号'}} · {{ row.device_type === 'full_params' ? '手机全参' : row.device_type === 'six_segment' ? '六段账号' : '关联设备' }}</small></template></el-table-column>
       <el-table-column label="养号阶段" min-width="180">
         <template #default="{ row }"><div class="stage-track" :aria-label="`初始化、养号、稳定、已就绪；当前${stageLabel(row.nurture_stage)}`"><span v-for="step in 4" :key="step" :class="{ reached: step <= stageIndex(row.nurture_stage), ready: stageIndex(row.nurture_stage) === 4 }" /></div><div>{{ stageLabel(row.nurture_stage) }}<template v-if="row.nurture_days && row.nurture_stage === 'nurturing'"> · 第 {{ row.nurture_days }} 天</template></div><small class="cell-secondary">{{ row.nurture_days ? '初始化 → 养号 → 稳定 → 就绪' : row.account_age_days ? `关联第 ${row.account_age_days} 天` : '养号起始时间未记录' }}</small></template>
       </el-table-column>
@@ -51,7 +51,11 @@
           <el-dropdown-item v-if="row.status === 'paused'" command="resume">恢复账号</el-dropdown-item>
           <el-dropdown-item v-if="isAdmin" command="proxy">更换代理</el-dropdown-item>
           <el-dropdown-item command="logs">查看日志</el-dropdown-item>
-          <el-dropdown-item command="login">重新登录</el-dropdown-item>
+          <el-dropdown-item v-if="isAdmin && row.nurture_stage==='none'" command="nurture_start">开始养号</el-dropdown-item>
+          <el-dropdown-item v-if="isAdmin && row.nurture_stage==='nurturing'" command="nurture_pause">暂停养号</el-dropdown-item>
+          <el-dropdown-item v-if="isAdmin && row.nurture_stage==='paused'" command="nurture_resume">恢复养号</el-dropdown-item>
+          <el-dropdown-item v-if="isAdmin && row.nurture_stage==='nurturing'" command="nurture_finish">确认完成养号</el-dropdown-item>
+          <el-dropdown-item v-if="isMobile(row)" command="mobile_login">手机协议登录 / 检测</el-dropdown-item><el-dropdown-item v-if="isMobile(row)" command="mobile_disconnect">断开手机连接</el-dropdown-item><el-dropdown-item v-else command="login">重新登录</el-dropdown-item>
           <el-dropdown-item v-if="isAdmin" command="convert" :disabled="!row.session_name || converting" divided>转换全参</el-dropdown-item>
           <el-dropdown-item v-if="isAdmin" command="export" :disabled="!row.full_params_ready || exporting">导出完整会话 ZIP</el-dropdown-item>
           <el-dropdown-item v-if="isAdmin" command="delete" divided>删除账号</el-dropdown-item>
@@ -66,11 +70,11 @@
     <el-dialog v-model="proxyVisible" title="更换账号代理" width="460px"><el-select v-model="proxyId" placeholder="选择真实、空闲的代理" style="width: 100%" filterable><el-option v-for="proxy in proxies" :key="proxy.id" :value="proxy.id" :label="`${countryLabel(proxy.country)} · ${proxy.host}:${proxy.port}`" /></el-select><p v-if="!proxies.length" class="muted">没有真实空闲代理，请先到资源对接导入或同步代理。</p><template #footer><el-button @click="proxyVisible = false">取消</el-button><el-button type="primary" :disabled="!proxyId" :loading="proxySaving" @click="saveProxy">保存</el-button></template></el-dialog>
     <WhatsAppLoginDialog v-model="loginVisible" @registered="loadAccounts" />
     <el-dialog v-model="assignVisible" title="分配账号分组" width="420px"><el-select v-model="assignedGroup" clearable placeholder="未分组" style="width:100%"><el-option v-for="group in groups" :key="group.id" :label="group.name" :value="group.id"/></el-select><template #footer><el-button @click="assignVisible=false">取消</el-button><el-button type="primary" @click="assignSelected">保存</el-button></template></el-dialog>
-    <el-dialog v-model="importVisible" title="导入登录会话" width="540px"><p class="muted">选择完整会话 ZIP（含 manifest.json、creds.json 和会话密钥）。导入后需连接验证。手机全参和五字段暂不能用此格式导入。</p><el-form label-position="top"><el-form-item label="账号分组"><el-select v-model="importGroup" clearable placeholder="未分组"><el-option v-for="group in groups" :key="group.id" :label="group.name" :value="group.id"/></el-select></el-form-item><el-form-item label="账号类型"><el-radio-group v-model="importType"><el-radio value="personal">个人号</el-radio><el-radio value="business">商业号</el-radio></el-radio-group></el-form-item><el-form-item label="会话 ZIP（最大 12 MB）"><input type="file" accept=".zip" @change="chooseArchive"/></el-form-item></el-form><template #footer><el-button @click="importVisible=false">取消</el-button><el-button type="primary" :loading="importing" :disabled="!archiveData" @click="importArchive">导入</el-button></template></el-dialog>
+    <el-dialog v-model="importVisible" title="导入账号" width="540px"><p class="muted">支持手机全参 JSON、六段文本和完整会话 ZIP。全参与六段导入后，在账号操作中选择手机协议登录，服务器确认在线后可开始养号。</p><el-form label-position="top"><el-form-item label="导入格式"><el-select v-model="importFormat"><el-option label="手机全参 JSON / JSONL" value="full_params"/><el-option label="六段文本（每行一个账号）" value="six_segment"/><el-option label="完整会话 ZIP" value="zip"/></el-select></el-form-item><el-form-item label="账号分组"><el-select v-model="importGroup" clearable placeholder="未分组"><el-option v-for="group in groups" :key="group.id" :label="group.name" :value="group.id"/></el-select></el-form-item><el-form-item label="账号类型"><el-radio-group v-model="importType"><el-radio value="personal">个人号</el-radio><el-radio value="business">商业号</el-radio></el-radio-group></el-form-item><template v-if="importFormat!=='zip'"><el-form-item label="粘贴账号凭据（每次最多 100 个）"><el-input v-model="credentialText" type="textarea" :rows="8" placeholder="粘贴全参 JSON、JSON 数组、JSONL，或六段文本"/></el-form-item><el-form-item label="或上传 TXT / JSON / JSONL（最大 2 MB）"><input type="file" accept=".txt,.json,.jsonl,.csv" @change="chooseCredentials"/></el-form-item></template><el-form-item v-else label="会话 ZIP（最大 12 MB）"><input type="file" accept=".zip" @change="chooseArchive"/></el-form-item></el-form><template #footer><el-button @click="importVisible=false">取消</el-button><el-button type="primary" :loading="importing" :disabled="importFormat==='zip' ? !archiveData : !credentialText.trim()" @click="importArchive">导入</el-button></template></el-dialog>
   </PageTemplate>
 </template>
 <script setup lang="ts">
-import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Iphone, Refresh, Search } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
@@ -87,7 +91,9 @@ const filters = reactive({ keyword: '', status: '', stage: '', group_id: undefin
 const groups=ref<ResourceCollection[]>([]),assignVisible=ref(false),assignedGroup=ref<number>(),importVisible=ref(false),importGroup=ref<number>(),importType=ref('personal'),archiveData=ref(''),importing=ref(false)
 async function assignSelected(){await workspaceApi.assignGroup('account',selected.value.map(x=>x.id),assignedGroup.value||null);assignVisible.value=false;await loadAccounts()}
 function chooseArchive(event:Event){archiveData.value='';const file=(event.target as HTMLInputElement).files?.[0];if(!file)return;if(file.size>12*1024*1024){ElMessage.warning('ZIP 文件不能超过 12 MB');return}const reader=new FileReader();reader.onload=()=>{archiveData.value=String(reader.result).split(',')[1]||''};reader.readAsDataURL(file)}
-async function importArchive(){importing.value=true;try{const r=await workspaceApi.imports(archiveData.value,importGroup.value||null,importType.value);ElMessage.success(`已导入 ${r.imported} 个会话，请重新连接验证`);importVisible.value=false;archiveData.value='';await loadAccounts()}finally{importing.value=false}}
+async function importArchive(){importing.value=true;try{const r=importFormat.value==='zip'?await workspaceApi.imports(archiveData.value,importGroup.value||null,importType.value):await workspaceApi.importCredentials(importFormat.value,credentialText.value,importGroup.value||null,importType.value);ElMessage.success(`已导入 ${r.imported} 个账号，请发起登录验证`);importVisible.value=false;archiveData.value='';credentialText.value='';await loadAccounts()}finally{importing.value=false}}
+const importFormat=ref<'full_params'|'six_segment'|'zip'>('full_params'),credentialText=ref('')
+async function chooseCredentials(event:Event){const file=(event.target as HTMLInputElement).files?.[0];if(!file)return;if(file.size>2_000_000){ElMessage.warning('文件不能超过 2 MB');return}credentialText.value=await file.text()}
 const selected = ref<AccountItem[]>([]), converting = ref(false), exporting = ref(false)
 const conversionFailures = ref<{ id: number; reason: string }[]>([])
 const detailVisible = ref(false), detailLoading = ref(false), current = ref<AccountDetail | null>(null)
@@ -104,11 +110,11 @@ function maskedPhone(phone: string) { return `+${phone.slice(0, Math.max(1, phon
 function healthColor(score: number) { return score >= 90 ? '#15803d' : score >= 70 ? '#b45309' : '#b42318' }
 function healthLabel(score: number) { return score >= 98 ? '优秀' : score >= 90 ? '健康' : score >= 70 ? '注意' : '风险' }
 function stageIndex(stage: string) { return ({ none: 1, nurturing: 2, stable: 3, ready: 4, done: 4 } as Record<string, number>)[stage] || 1 }
-function stageLabel(stage: string) { return stage === 'none' ? '初始化' : NURTURE_STAGE_LABEL[stage] || stage }
+function stageLabel(stage: string) { return stage === 'none' ? '初始化' : (stage === 'paused' ? '养号已暂停' : NURTURE_STAGE_LABEL[stage]) || stage }
 function countryLabel(country: string) { return ({ CN: '中国', US: '美国', GB: '英国', BR: '巴西', ID: '印尼', IN: '印度', MX: '墨西哥', RU: '俄罗斯' } as Record<string, string>)[country] || country || '地区未记录' }
-function connectionLabel(state?: string) { return ({ online: '在线', offline: '当前未连接', unlinked: '未关联', invalid: '登录失效', error: '连接异常' } as Record<string, string>)[state || ''] || '未检测' }
+function connectionLabel(state?: string) { return ({ starting: '手机登录中', pending_adapter: '手机引擎未安装', online: '在线', offline: '当前未连接', unlinked: '未关联', invalid: '登录失效', error: '连接异常' } as Record<string, string>)[state || ''] || '未检测' }
 function networkLabel(state?: string) { return ({ healthy: '最近检测正常', failed: '代理异常', mock: '模拟代理', stale: '检测已过期', unknown: '未检测' } as Record<string, string>)[state || ''] || '未检测' }
-function stateLabel(row: AccountItem) { if (row.status !== 'normal') return ACCOUNT_STATUS_LABEL[row.status] || row.status; if (['invalid', 'error'].includes(row.connection_state || '')) return connectionLabel(row.connection_state); if (row.network_state === 'failed') return '代理异常'; if (row.health_score < 70) return '健康风险'; return '正常' }
+function stateLabel(row: AccountItem) { if(isMobile(row)) return connectionLabel(row.connection_state); if (row.status !== 'normal') return ACCOUNT_STATUS_LABEL[row.status] || row.status; if (['invalid', 'error'].includes(row.connection_state || '')) return connectionLabel(row.connection_state); if (row.network_state === 'failed') return '代理异常'; if (row.health_score < 70) return '健康风险'; return '正常' }
 function statusTone(row: AccountItem) { return row.abnormal ? row.status === 'paused' ? 'muted-dot' : 'bad' : 'good' }
 function resetFilters() { filters.keyword = ''; filters.status = ''; filters.stage = '';filters.group_id=undefined }
 async function loadAccounts() { loading.value = true; try { const [rows,collections]=await Promise.all([accountApi.list(),workspaceApi.groups('account')]);accounts.value=rows;groups.value=collections;apiError.value = false; selected.value = [] } catch { apiError.value = true } finally { loading.value = false } }
@@ -124,6 +130,9 @@ async function exportAccounts(ids: number[]) {
 async function loadLogs() { logsLoading.value = true; try { const result = await accountApi.logs(logAccountId.value, { page: logPage.value, size: 20 }); accountLogs.value = result.list; logTotal.value = result.total } finally { logsLoading.value = false } }
 async function saveProxy() { if (!proxyId.value) return; proxySaving.value = true; try { const result = await accountApi.assignProxy(proxyAccountId.value, proxyId.value); ElMessage.success(result.message); proxyVisible.value = false; await loadAccounts() } finally { proxySaving.value = false } }
 async function onRowCommand(command: string, row: AccountItem) {
+  if(command==='mobile_login'){await workspaceApi.mobileConnect(row.id);ElMessage.success('登录已发起，正在等待真实连接结果');await loadAccounts();return}
+  if(command==='mobile_disconnect'){await workspaceApi.mobileDisconnect(row.id);ElMessage.success('手机连接已断开');await loadAccounts();return}
+  if(command.startsWith('nurture_')){await workspaceApi.nurture(row.id,command.slice(8));ElMessage.success('养号阶段已更新');await loadAccounts();return}
   if (command === 'convert') return convertAccount(row.id)
   if (command === 'export') return exportAccounts([row.id])
   if (command === 'logs') { logAccountId.value = row.id; logPage.value = 1; accountLogs.value = []; logsVisible.value = true; return loadLogs() }
@@ -134,8 +143,14 @@ async function onRowCommand(command: string, row: AccountItem) {
   if (command === 'resume') { await accountApi.resume(row.id); ElMessage.success('账号已恢复') }
   await loadAccounts()
 }
-onMounted(loadAccounts)
-onActivated(()=>{if(!loading.value)loadAccounts()})
+function mobileError(code:string){return ({login_failed:'手机认证未成功，请检查账号凭据、版本和代理',protocol_login:'手机协议认证失败',connect_failed:'手机引擎连接失败',engine_stopped:'手机引擎已停止',disconnect_logged_out:'登录已失效'} as Record<string,string>)[code]||code}
+function isMobile(row:AccountItem){return ['full_params','six_segment'].includes(row.device_type||'')&&!row.session_name}
+let mobilePoll:ReturnType<typeof setInterval>|undefined
+let pollActive=true
+onMounted(()=>{loadAccounts();mobilePoll=setInterval(async()=>{if(!pollActive||loading.value||!accounts.value.some(isMobile))return;try{accounts.value=await accountApi.list()}catch{}},5000)})
+onUnmounted(()=>{if(mobilePoll)clearInterval(mobilePoll)})
+onActivated(()=>{pollActive=true;if(!loading.value)loadAccounts()})
+onDeactivated(()=>{pollActive=false})
 </script>
 <style scoped>
 .account-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; padding: 20px 0 24px; border-bottom: 1px solid var(--wa-border); margin-bottom: 20px; }

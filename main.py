@@ -977,6 +977,29 @@ def get_mass_send(task_id: int, db: Session = Depends(get_db)):
     from operations import task_detail
     return {"code": 0, "data": task_detail("mass-send", task_id, db)}
 
+
+# ---------- 批量删除群发任务 ----------
+@app.delete("/api/v1/mass-send/tasks", dependencies=[Depends(require_login)])
+def delete_mass_send_tasks(req: BatchIdsRequest, db: Session = Depends(get_db)):
+    if not req.ids:
+        return {"code": 0, "data": {"deleted": 0}}
+    deletable = db.query(MassSendTask).filter(
+        MassSendTask.id.in_(req.ids),
+        MassSendTask.status.in_(("done", "failed", "cancelled")),
+    ).all()
+    if not deletable:
+        raise HTTPException(status_code=409, detail="只能删除已结束的任务（已完成/已失败/已取消）")
+    ids_to_delete = [t.id for t in deletable]
+    running_ids = [i for i in req.ids if i not in ids_to_delete]
+    db.query(TaskExecution).filter(TaskExecution.task_kind == "mass-send", TaskExecution.task_id.in_(ids_to_delete)).delete(synchronize_session=False)
+    db.query(TaskLog).filter(TaskLog.task_kind == "mass-send", TaskLog.task_id.in_(ids_to_delete)).delete(synchronize_session=False)
+    count = db.query(MassSendTask).filter(MassSendTask.id.in_(ids_to_delete)).delete(synchronize_session=False)
+    db.commit()
+    message = f"已删除 {count} 个任务"
+    if running_ids:
+        message += f"，{len(running_ids)} 个进行中的任务未删除"
+    return {"code": 0, "data": {"deleted": count}, "message": message}
+
 # ---------- 登录 ----------
 @app.post("/api/v1/auth/login")
 def login(req: LoginRequest, db: Session = Depends(get_db)):
@@ -1158,6 +1181,29 @@ def fetch_group_links(req: BatchIdsRequest, db: Session = Depends(get_db)):
 def get_invite_task(task_id: int, db: Session = Depends(get_db)):
     from operations import task_detail
     return {"code": 0, "data": task_detail("pull-group", task_id, db)}
+
+
+# ---------- 批量删除拉群任务 ----------
+@app.delete("/api/v1/invite/tasks", dependencies=[Depends(require_login)])
+def delete_invite_tasks(req: BatchIdsRequest, db: Session = Depends(get_db)):
+    if not req.ids:
+        return {"code": 0, "data": {"deleted": 0}}
+    deletable = db.query(InviteTask).filter(
+        InviteTask.id.in_(req.ids),
+        InviteTask.status.in_(("done", "failed", "cancelled")),
+    ).all()
+    if not deletable:
+        raise HTTPException(status_code=409, detail="只能删除已结束的任务（已完成/已失败/已取消）")
+    ids_to_delete = [t.id for t in deletable]
+    running_ids = [i for i in req.ids if i not in ids_to_delete]
+    db.query(TaskExecution).filter(TaskExecution.task_kind == "pull-group", TaskExecution.task_id.in_(ids_to_delete)).delete(synchronize_session=False)
+    db.query(TaskLog).filter(TaskLog.task_kind == "pull-group", TaskLog.task_id.in_(ids_to_delete)).delete(synchronize_session=False)
+    count = db.query(InviteTask).filter(InviteTask.id.in_(ids_to_delete)).delete(synchronize_session=False)
+    db.commit()
+    message = f"已删除 {count} 个任务"
+    if running_ids:
+        message += f"，{len(running_ids)} 个进行中的任务未删除"
+    return {"code": 0, "data": {"deleted": count}, "message": message}
 
 # ============================================================
 # 真实发送（wasock）—— 由 USE_REAL_SEND 开关控制
@@ -2764,6 +2810,29 @@ def release_one_proxy(proxy_id: int, db: Session = Depends(get_db),
     return {"code": 0, "data": proxy_dict(row)}
 
 
+@app.delete("/api/v1/proxies")
+def delete_proxies(req: BatchIdsRequest, db: Session = Depends(get_db),
+                   user: User = Depends(require_admin)):
+    """批量删除代理：正在使用的代理会先释放再删除。"""
+    if not req.ids:
+        return {"code": 0, "data": {"deleted": 0}}
+    rows = db.query(ProxyPool).filter(ProxyPool.id.in_(req.ids)).all()
+    if not rows:
+        return {"code": 0, "data": {"deleted": 0}}
+    addresses = [row.address for row in rows]
+    for row in rows:
+        row.status = "free"
+        row.bound_number_id = None
+    if addresses:
+        db.query(NumberPool).filter(NumberPool.proxy_ip.in_(addresses)).update(
+            {NumberPool.proxy_ip: ""}, synchronize_session=False
+        )
+    count = db.query(ProxyPool).filter(ProxyPool.id.in_(req.ids)).delete(synchronize_session=False)
+    db.commit()
+    log_operation(db, "delete_proxy", target=f"{count} 条", detail="批量删除代理", user=user)
+    return {"code": 0, "data": {"deleted": count}}
+
+
 # ---------------------------------------------------------------- 接口：接码平台
 @app.get("/api/v1/sms/orders")
 def list_sms_orders(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=200),
@@ -2864,6 +2933,29 @@ def cancel_sms_order(order_id: int, db: Session = Depends(get_db),
         db.commit()
     log_operation(db, "cancel_sms_order", target=row.phone, detail="取消接码订单", user=user)
     return {"code": 0, "data": sms_order_dict(row)}
+
+
+@app.delete("/api/v1/sms/orders")
+def delete_sms_orders(req: BatchIdsRequest, db: Session = Depends(get_db),
+                      user: User = Depends(current_user)):
+    """批量删除接码订单：只删除已完结的订单（completed/cancelled/expired）。"""
+    if not req.ids:
+        return {"code": 0, "data": {"deleted": 0}}
+    deletable = db.query(SmsOrder).filter(
+        SmsOrder.id.in_(req.ids),
+        SmsOrder.status.in_(("completed", "cancelled", "expired")),
+    ).all()
+    if not deletable:
+        raise HTTPException(status_code=409, detail="只能删除已完结的接码订单（已完成/已取消/已过期）")
+    ids_to_delete = [o.id for o in deletable]
+    waiting_ids = [i for i in req.ids if i not in ids_to_delete]
+    count = db.query(SmsOrder).filter(SmsOrder.id.in_(ids_to_delete)).delete(synchronize_session=False)
+    db.commit()
+    log_operation(db, "delete_sms_order", target=f"{count} 条", detail="批量删除接码订单", user=user)
+    message = f"已删除 {count} 个接码订单"
+    if waiting_ids:
+        message += f"，{len(waiting_ids)} 个等待中的订单未删除"
+    return {"code": 0, "data": {"deleted": count}, "message": message}
 
 
 # ---------------------------------------------------------------- 接口：账号采购
@@ -3360,6 +3452,7 @@ app.include_router(finance_api.router)
 app.include_router(account_export_api.router)
 app.include_router(account_management_api.router)
 import workspace_api
+import mobile_maintenance
 Base.metadata.create_all(bind=engine)
 migrate_tenants(engine, Base.metadata)
 app.include_router(workspace_api.router)

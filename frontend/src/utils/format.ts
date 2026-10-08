@@ -50,6 +50,7 @@ export const ACCOUNT_STATUS_LABEL: Record<string, string> = {
 export const NURTURE_STAGE_LABEL: Record<string, string> = {
   none: '未开始',
   nurturing: '养号中',
+  paused: '养号已暂停',
   stable: '稳定阶段',
   ready: '已就绪',
   done: '已完成',

@@ -5,11 +5,15 @@ from pydantic import BaseModel
 from sqlalchemy import func
 import main as m
 import operations
+from typing import Literal
+from mobile_session import runtime as mobile_runtime, is_mobile, session_key
 
 router = APIRouter(prefix='/api/v1/accounts')
 
 
 def account_rows(db):
+    from mobile_maintenance import MobileProgress
+    mobile_progress = {p.account_id: p for p in db.query(MobileProgress)}
     numbers = {n.id: n for n in db.query(m.NumberPool).all()}
     proxies = {p.bound_number_id: p for p in db.query(m.ProxyPool).filter(m.ProxyPool.bound_number_id.isnot(None)).all()}
     activity = {row.account_id: (row._mapping['count'], row.success) for row in db.query(
@@ -21,12 +25,15 @@ def account_rows(db):
     result = []
     for account in db.query(m.AccountPool).order_by(m.AccountPool.id).all():
         number, proxy = numbers.get(account.number_id), proxies.get(account.number_id)
-        session = m.get_session(account.session_name).snapshot() if m.WHATSAPP_SESSION_AVAILABLE and account.session_name else {}
+        session = mobile_runtime.snapshot(session_key(account)) if is_mobile(account) else m.get_session(account.session_name).snapshot() if m.WHATSAPP_SESSION_AVAILABLE and account.session_name else {}
         paired = bool(account.session_name and m.read_paired_phone(account.session_name)) if m.WHATSAPP_SESSION_AVAILABLE else False
-        connection = 'unlinked' if not account.session_name else 'invalid' if not paired else 'online' if session.get('status') == 'connected' else 'offline'
-        if session.get('status') in ('closed','error'):
+        connection = ('pending_adapter' if account.device_type in ('full_params', 'six_segment') else 'unlinked') if not account.session_name else 'invalid' if not paired else 'online' if session.get('status') == 'connected' else 'offline'
+        if is_mobile(account):
+            connection = {'connected': 'online', 'starting': 'starting', 'error': 'error', 'closed': 'offline'}.get(session.get('status'), 'offline' if mobile_runtime.configured() else 'pending_adapter')
+        if session.get('status') == 'error' or (not is_mobile(account) and session.get('status') == 'closed'):
             connection = 'error'
         count, success = activity.get(account.id, (0,0))
+        progress = mobile_progress.get(account.id)
         network_state = 'unknown'
         if proxy:
             if proxy.provider == 'mock':
@@ -52,6 +59,9 @@ def account_rows(db):
             'proxy_assigned_at': m._dt(proxy.last_used_at) if proxy else None,
             'connection_state': connection, 'abnormal': abnormal,
             'activity_success_rate': m._rate(success or 0,count) if count else None,
+            'mobile_status': session.get('status', '') if is_mobile(account) else '',
+            'mobile_error': progress.last_error if progress and progress.last_error else session.get('error', '') if is_mobile(account) else '',
+            'online_seconds': progress.online_seconds if progress else 0,
             'session_enabled':bool(account.session_enabled), 'full_params_ready': bool(account.full_params_ready), 'session_name': account.session_name or ''})
     return result
 
@@ -62,6 +72,88 @@ def get_account_row(account_id, db):
 
 class ProxyAssignment(BaseModel):
     proxy_id: int
+
+
+class NurtureAction(BaseModel):
+    action: Literal['start', 'pause', 'resume', 'finish']
+
+
+@router.post('/{account_id}/mobile-connect')
+def connect_mobile(account_id: int, db=Depends(m.get_db), user=Depends(m.require_admin)):
+    account = db.get(m.AccountPool, account_id)
+    if not account or not is_mobile(account): raise HTTPException(422, '请选择已导入的手机全参或六段账号')
+    if account.status != 'normal': raise HTTPException(409, '请先恢复账号状态')
+    with operations.account_lock(account):
+        try: state = mobile_runtime.connect(account, db)
+        except (ValueError, TimeoutError) as exc: raise HTTPException(422, str(exc)) from None
+        account.session_enabled = True
+        from mobile_maintenance import progress_for
+        progress = progress_for(account, db)
+        progress.failures = 0
+        progress.last_error = ''
+        progress.next_attempt = None
+        db.commit()
+    m.log_operation(db, 'mobile_connect', target=str(account.id), detail='手机协议登录已发起，等待服务器确认', user=user)
+    return {'code': 0, 'data': state}
+
+
+@router.post('/{account_id}/mobile-disconnect')
+def disconnect_mobile(account_id: int, db=Depends(m.get_db), user=Depends(m.require_admin)):
+    account = db.get(m.AccountPool, account_id)
+    if not account or not is_mobile(account): raise HTTPException(422, '请选择手机协议账号')
+    if account_in_use(db, account_id): raise HTTPException(409, '账号被任务使用，请先结束任务')
+    with operations.account_lock(account):
+        try: mobile_runtime.disconnect(account)
+        except (ValueError, TimeoutError) as exc: raise HTTPException(422, str(exc)) from None
+        account.session_enabled = False
+        if account.nurture_stage == 'nurturing': account.nurture_stage = 'paused'
+        db.commit()
+    m.log_operation(db, 'mobile_disconnect', target=str(account.id), detail='手机协议连接已断开', user=user)
+    return {'code': 0, 'data': {'status': 'idle'}}
+
+
+@router.post('/{account_id}/nurture')
+def nurture_account(account_id: int, req: NurtureAction, db=Depends(m.get_db), user=Depends(m.require_admin)):
+    with operations._channel_lock:
+        account = db.get(m.AccountPool, account_id)
+        if not account: raise HTTPException(404, '账号不存在')
+        with operations.account_lock(account):
+            if account_in_use(db, account_id): raise HTTPException(409, '账号被未结束任务使用，请先结束任务')
+            allowed = {'start': ('none',), 'pause': ('nurturing',), 'resume': ('paused',), 'finish': ('nurturing',)}
+            if account.nurture_stage not in allowed[req.action]:
+                raise HTTPException(409, '当前养号阶段不支持此操作')
+            if req.action != 'pause':
+                if account.status != 'normal': raise HTTPException(409, '账号状态异常，请先处理')
+                if is_mobile(account):
+                    state = mobile_runtime.snapshot(session_key(account))
+                    number = db.get(m.NumberPool, account.number_id)
+                    if state.get('status') != 'connected' or not number or state.get('phone') != number.phone_number.lstrip('+'):
+                        raise HTTPException(409, '手机账号尚未真实在线，请先登录验证')
+                    try: mobile_runtime.presence(account, req.action != 'finish')
+                    except (ValueError, TimeoutError) as exc: raise HTTPException(422, str(exc)) from None
+                elif not account.session_name:
+                    raise HTTPException(409, '账号尚未接入真实登录，无法开始或完成养号')
+                elif not m.WHATSAPP_SESSION_AVAILABLE or m.get_session(account.session_name).snapshot().get('status') != 'connected':
+                    raise HTTPException(409, '账号未在线，请先连接验证')
+                if not is_mobile(account):
+                    number = db.get(m.NumberPool, account.number_id)
+                    import re
+                    if not number or m.read_paired_phone(account.session_name) != re.sub(r'\D', '', number.phone_number or ''):
+                        raise HTTPException(409, '登录会话与账号号码不一致')
+            account.nurture_stage = {'start': 'nurturing', 'pause': 'paused', 'resume': 'nurturing', 'finish': 'done'}[req.action]
+            if req.action == 'start': account.nurture_started_at = datetime.now()
+            if req.action in ('start', 'resume'): account.session_enabled = True
+            if req.action == 'pause':
+                account.session_enabled = False
+                if is_mobile(account):
+                    try: mobile_runtime.disconnect(account)
+                    except (ValueError, TimeoutError): pass
+            if is_mobile(account):
+                from mobile_maintenance import progress_for
+                progress_for(account, db).last_heartbeat = datetime.now() if req.action in ('start', 'resume') else None
+            db.commit()
+            m.log_operation(db, 'nurture_' + req.action, target=str(account.id), detail='养号阶段变更：' + account.nurture_stage, user=user)
+            return {'code': 0, 'data': {'stage': account.nurture_stage}}
 
 
 def account_in_use(db, account_id):
@@ -121,10 +213,18 @@ def delete_account(account_id: int, db=Depends(m.get_db), user=Depends(m.require
         if account.session_name:
             with operations.account_lock(account):
                 m.get_session(account.session_name).stop()
+        elif is_mobile(account):
+            with operations.account_lock(account):
+                mobile_runtime.disconnect(account)
         number=db.get(m.NumberPool,account.number_id)
         if number:
             number.account_id=None
         m.release_proxy(db,account.number_id)
+        from workspace_api import ImportedCredential
+        for credential in db.query(ImportedCredential).filter_by(account_id=account_id):
+            db.delete(credential)
+        from mobile_maintenance import MobileProgress
+        for progress in db.query(MobileProgress).filter_by(account_id=account_id): db.delete(progress)
         db.delete(account);db.commit()
         m.log_operation(db,'delete_account',target=str(account_id),detail='删除账号登记，登录会话仍保留供重新关联',user=user)
         return {'code':0,'data':{'deleted':account_id}}

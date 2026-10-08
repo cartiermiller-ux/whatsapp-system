@@ -36,6 +36,8 @@ INCLUDE_FILES = [
     "account_management_api.py",
     "workspace_api.py",
     "whatsapp_session.py",
+    "mobile_session.py",
+    "mobile_maintenance.py",
     "connect_whatsapp.py",
     "requirements.txt",
     "README.md",

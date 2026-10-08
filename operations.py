@@ -660,6 +660,7 @@ def scheduler_loop():
 def startup():
     global _scheduler
     _stop.clear()
+    __import__('mobile_maintenance').start()
     with m.system_session() as lookup:
         tenant_ids = [t.id for t in lookup.query(m.Tenant).all()]
     for tenant_id in tenant_ids:
@@ -685,6 +686,7 @@ def startup():
 
 def shutdown():
     _stop.set()
+    __import__('mobile_maintenance').stop()
     if _scheduler:
         _scheduler.join(timeout=3)
     if m.WHATSAPP_SESSION_AVAILABLE:

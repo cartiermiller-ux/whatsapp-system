@@ -66,6 +66,8 @@ def enforce_query_scope(state):
 
 # Relationships without database foreign keys must still belong to the same tenant.
 REFERENCES = {
+    'imported_credential': {'account_id': 'account_pool'},
+    'mobile_progress': {'account_id': 'account_pool'},
     'number_pool': {'account_id': 'account_pool'},
     'account_pool': {'number_id': 'number_pool', 'group_id': 'resource_collection'},
     'resource_group': {'owner_account_id': 'account_pool'},

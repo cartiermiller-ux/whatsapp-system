@@ -84,6 +84,9 @@ export interface AccountItem {
   network_state?: string
   latency_ms?: number | null
   connection_state?: string
+  mobile_status?: string
+  mobile_error?: string
+  online_seconds?: number
   abnormal?: boolean
   activity_success_rate?: number | null
   full_params_ready: boolean

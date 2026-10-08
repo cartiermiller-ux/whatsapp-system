@@ -18,6 +18,109 @@ import account_export_api as exports
 
 router = APIRouter(prefix='/api/v1/workspace')
 
+class ImportedCredential(m.TenantOwned, m.Base):
+    __tablename__ = 'imported_credential'
+    __table_args__ = (UniqueConstraint('tenant_id', 'account_id', name='uq_imported_credential_account'),)
+    id = Column(Integer, primary_key=True)
+    account_id = Column(Integer, nullable=False)
+    format = Column(String(20), nullable=False)
+    payload = Column(Text, nullable=False)  # Private: never include in API responses or logs.
+    created_at = Column(DateTime, default=datetime.now)
+
+class CredentialImport(BaseModel):
+    format: Literal['full_params', 'six_segment']
+    content: str = Field(min_length=1, max_length=2_000_000, repr=False)
+    group_id: int | None = None
+    account_type: Literal['personal', 'business'] = 'personal'
+
+
+def parse_credentials(format, content):
+    def phone(value):
+        value = str(value).split('@')[0]
+        if not re.fullmatch(r'[0-9]{7,20}', value):
+            raise ValueError('手机号格式无效')
+        return value
+
+    def key(value, length):
+        if not isinstance(value, str) or len(base64.b64decode(value, validate=True)) != length:
+            raise ValueError('密钥编码或长度无效')
+
+    records = []
+    if format == 'full_params':
+        try:
+            parsed = json.loads(content)
+            items = parsed if isinstance(parsed, list) else [parsed]
+        except ValueError:
+            try:
+                items = [json.loads(line) for line in content.splitlines() if line.strip()]
+            except ValueError:
+                raise HTTPException(422, '全参 JSON 格式无效') from None
+        for index, item in enumerate(items, 1):
+            try:
+                if not isinstance(item, dict): raise ValueError('每条记录必须为对象')
+                number = phone(item['jid'])
+                for name in ('identityPublicKey', 'identityPrivateKey', 'clientStaticPublicKey', 'clientStaticPrivateKey', 'signPreKeyPublicKey', 'signPreKeyPrivateKey'):
+                    key(item[name], 32)
+                key(item['signPreKeySignature'], 64)
+                for name in ('registrationID', 'signPreKeyID'):
+                    if type(item[name]) is not int or not 0 <= item[name] <= 4294967295:
+                        raise ValueError('密钥编号无效')
+                for name in ('phoneUUID', 'deviceUUID'):
+                    uuid.UUID(item[name])
+                for name in ('osVersion', 'manufacturer', 'device', 'whatsappVersion'):
+                    if not isinstance(item.get(name), str) or not item[name].strip(): raise ValueError('缺少设备参数')
+                records.append((number, json.dumps(item, ensure_ascii=False)))
+            except (KeyError, ValueError, TypeError):
+                raise HTTPException(422, f'第 {index} 条全参记录字段缺失或格式无效') from None
+    else:
+        for index, line in enumerate((x for x in content.splitlines() if x.strip()), 1):
+            try:
+                fields = [x.strip() for x in line.split(',')]
+                if len(fields) != 6: raise ValueError('需要六段')
+                number = phone(fields[0])
+                for value in fields[1:5]: key(value, 32)
+                if not base64.b64decode(fields[5], validate=True): raise ValueError('末段为空')
+                # Keep original order; do not guess the vendor's field mapping.
+                records.append((number, json.dumps(fields)))
+            except (ValueError, TypeError):
+                raise HTTPException(422, f'第 {index} 行六段记录格式无效（号码及五段 Base64）') from None
+    if not 1 <= len(records) <= 100:
+        raise HTTPException(422, '每次导入 1 至 100 个账号')
+    if len({number for number, _ in records}) != len(records):
+        raise HTTPException(422, '导入内容含重复手机号')
+    return records
+
+
+@router.post('/credential-import')
+def import_credentials(req: CredentialImport, db=Depends(m.get_db), user=Depends(m.require_admin)):
+    check_group(db, req.group_id, 'account')
+    records = parse_credentials(req.format, req.content)
+    numbers = {re.sub(r'\D', '', n.phone_number or ''): n for n in db.query(m.NumberPool).all()}
+    for number, _ in records:
+        existing = numbers.get(number)
+        if existing and db.query(m.AccountPool).filter_by(number_id=existing.id).first():
+            raise HTTPException(409, '导入账号已存在，请先处理已有账号；本次未导入')
+    ids = []
+    try:
+        for phone, payload in records:
+            number = numbers.get(phone)
+            if number is None:
+                number = m.NumberPool(phone_number=phone, source_type='import', source_channel=req.format, status='pending')
+                db.add(number); db.flush()
+            account = m.AccountPool(number_id=number.id, group_id=req.group_id, account_type=req.account_type,
+                                    device_type=req.format, session_enabled=False, nurture_stage='none', health_score=0)
+            db.add(account); db.flush()
+            number.account_id = account.id
+            number.status = 'pending'
+            db.add(ImportedCredential(account_id=account.id, format=req.format, payload=payload))
+            ids.append(account.id)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    m.log_operation(db, 'import_credentials', target=','.join(map(str, ids)), detail=f'导入 {len(ids)} 个账号，凭据待接入登录', user=user)
+    return {'code': 0, 'data': {'ids': ids, 'imported': len(ids), 'status': 'pending_adapter'}}
+
 class Collection(m.TenantOwned, m.Base):
     __tablename__ = 'resource_collection'
     __table_args__ = (UniqueConstraint('tenant_id', 'kind', 'name', name='uq_collection_tenant_kind_name'),)
@@ -108,7 +211,7 @@ def assign_group(req: Assignment, db=Depends(m.get_db), user=Depends(m.require_a
 
 @router.get('/account-logs')
 def account_logs(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), keyword: str = '', db=Depends(m.get_db), user=Depends(m.current_user)):
-    q = db.query(m.OperationLog).filter(m.OperationLog.action.in_(['convert_account', 'convert_accounts', 'export_accounts', 'import_sessions', 'assign_group', 'delete_account', 'assign_proxy', 'create_inspection']))
+    q = db.query(m.OperationLog).filter(m.OperationLog.action.in_(['convert_account', 'convert_accounts', 'export_accounts', 'import_sessions', 'import_credentials', 'mobile_connect', 'mobile_disconnect', 'mobile_connection', 'nurture_start', 'nurture_pause', 'nurture_resume', 'nurture_finish', 'assign_group', 'delete_account', 'assign_proxy', 'create_inspection']))
     if keyword: q = q.filter(m.OperationLog.action.contains(keyword) | m.OperationLog.target.contains(keyword))
     return {'code': 0, 'data': {'total': q.count(), 'list': [m.operation_dict(x) if hasattr(m, 'operation_dict') else
         {'id': x.id, 'action': x.action, 'target': x.target, 'result': x.result, 'detail': x.detail, 'username': x.username, 'created_at': m._dt(x.created_at)}

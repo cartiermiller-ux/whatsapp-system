@@ -7,6 +7,9 @@
       </div>
       <div class="actions">
         <el-button :icon="Refresh" :loading="loading" @click="loadTasks">刷新</el-button>
+        <el-button type="danger" plain :disabled="!selectedIds.length" @click="removeTasks">
+          删除所选{{ selectedIds.length ? `(${selectedIds.length})` : '' }}
+        </el-button>
         <el-button type="primary" :icon="Plus" @click="createVisible = true">新建拉群任务</el-button>
       </div>
     </div>
@@ -18,7 +21,8 @@
               <span class="muted">{{ total }} 条</span>
             </div>
           </template>
-          <el-table v-loading="loading" :data="tasks" stripe>
+          <el-table v-loading="loading" :data="tasks" stripe @selection-change="onSelectionChange">
+            <el-table-column type="selection" width="50" />
             <el-table-column prop="id" label="ID" width="70" />
             <el-table-column prop="task_name" label="任务名称" min-width="150" show-overflow-tooltip />
             <el-table-column prop="target_group_id" label="目标群 ID" width="110" />
@@ -163,7 +167,7 @@ import TaskExecutionPanel from '@/components/TaskExecutionPanel.vue'
 import PageTemplate from '@/components/PageTemplate.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { computed, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { accountApi, groupApi, inviteApi } from '@/api'
 import type { AccountItem, GroupRow, InviteTaskDetail, InviteTaskRow } from '@/types/api'
@@ -189,6 +193,32 @@ const tasks = ref<InviteTaskRow[]>([])
 const total = ref(0)
 const page = ref(1)
 const size = ref(20)
+const selectedIds = ref<number[]>([])
+
+function onSelectionChange(rows: InviteTaskRow[]) {
+  selectedIds.value = rows.map((r) => r.id)
+}
+
+async function removeTasks() {
+  if (!selectedIds.value.length) return
+  try {
+    await ElMessageBox.confirm(
+      `确认删除 ${selectedIds.value.length} 个拉群任务？只能删除已结束的任务（已完成/已失败/已取消），执行记录和日志也会一并清理。`,
+      '批量删除',
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    const res = await inviteApi.remove(selectedIds.value)
+    ElMessage.success(res.message || `已删除 ${res.deleted} 个任务`)
+    selectedIds.value = []
+    await loadTasks()
+  } catch {
+    /* 拦截器已提示 */
+  }
+}
 
 // ---------- 详情抽屉（实时拉取） ----------
 const detailVisible = ref(false)

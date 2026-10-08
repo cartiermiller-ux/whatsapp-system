@@ -150,6 +150,13 @@ export const massSendApi = {
       method: 'get',
     })
   },
+  remove(ids: number[]) {
+    return request<{ deleted: number; message?: string }>({
+      url: '/mass-send/tasks',
+      method: 'delete',
+      data: { ids },
+    })
+  },
 }
 
 /** 资源群 —— GET /api/v1/groups */
@@ -197,6 +204,13 @@ export const inviteApi = {
   },
   detail(id: number) {
     return request<InviteTaskDetail>({ url: `/invite/tasks/${id}`, method: 'get' })
+  },
+  remove(ids: number[]) {
+    return request<{ deleted: number; message?: string }>({
+      url: '/invite/tasks',
+      method: 'delete',
+      data: { ids },
+    })
   },
 }
 
@@ -422,6 +436,9 @@ export const integrationApi = {
   releaseProxy(id: number) {
     return request<ProxyRow>({ url: `/proxies/${id}/release`, method: 'post' })
   },
+  removeProxies(ids: number[]) {
+    return request<{ deleted: number }>({ url: '/proxies', method: 'delete', data: { ids } })
+  },
   defaultProxy(id: number) {
     return request<ProxyRow>({ url: `/proxies/${id}/default`, method: 'post' })
   },
@@ -448,6 +465,9 @@ export const integrationApi = {
   },
   cancelSmsOrder(id: number) {
     return request<SmsOrderRow>({ url: `/sms/orders/${id}/cancel`, method: 'post' })
+  },
+  removeSmsOrders(ids: number[]) {
+    return request<{ deleted: number }>({ url: '/sms/orders', method: 'delete', data: { ids } })
   },
   listProducts() {
     return request<{ provider: string; list: ProductRow[] }>({

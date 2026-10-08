@@ -7,6 +7,9 @@
       </div>
       <div class="actions">
         <el-button :icon="Refresh" :loading="loading" @click="loadTasks">刷新</el-button>
+        <el-button type="danger" plain :disabled="!selectedIds.length" @click="removeTasks">
+          删除所选{{ selectedIds.length ? `(${selectedIds.length})` : '' }}
+        </el-button>
         <el-button type="primary" :icon="Plus" @click="createVisible = true">新建群发任务</el-button>
       </div>
     </div>
@@ -30,7 +33,8 @@
             </div>
           </template>
 
-          <el-table v-loading="loading" :data="tasks" stripe>
+          <el-table v-loading="loading" :data="tasks" stripe @selection-change="onSelectionChange">
+            <el-table-column type="selection" width="50" />
             <el-table-column prop="id" label="ID" width="70" />
             <el-table-column prop="task_name" label="任务名称" min-width="140" show-overflow-tooltip />
             <el-table-column label="状态" width="100">
@@ -231,7 +235,7 @@ import TaskExecutionPanel from '@/components/TaskExecutionPanel.vue'
 import PageTemplate from '@/components/PageTemplate.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { accountApi, massSendApi } from '@/api'
 import { workspaceApi, type ResourceCollection } from '@/api/workspace'
@@ -260,6 +264,32 @@ const total = ref(0)
 const page = ref(1)
 const size = ref(10)
 const statusFilter = ref('')
+const selectedIds = ref<number[]>([])
+
+function onSelectionChange(rows: MassSendTaskRow[]) {
+  selectedIds.value = rows.map((r) => r.id)
+}
+
+async function removeTasks() {
+  if (!selectedIds.value.length) return
+  try {
+    await ElMessageBox.confirm(
+      `确认删除 ${selectedIds.value.length} 个群发任务？只能删除已结束的任务（已完成/已失败/已取消），执行记录和日志也会一并清理。`,
+      '批量删除',
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    const res = await massSendApi.remove(selectedIds.value)
+    ElMessage.success(res.message || `已删除 ${res.deleted} 个任务`)
+    selectedIds.value = []
+    await loadTasks()
+  } catch {
+    /* 拦截器已提示 */
+  }
+}
 
 const form = reactive({
   task_name: '',

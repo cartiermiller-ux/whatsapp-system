@@ -30,6 +30,36 @@ def archive(phone='12345678901', extra=None):
     return base64.b64encode(content.getvalue()).decode()
 
 class WorkspaceTests(unittest.TestCase):
+    def test_six_segment_import_and_nurture_gate(self):
+        import account_management_api as management
+        key = base64.b64encode(bytes(32)).decode()
+        content = ','.join(['12345678980', key, key, key, key, base64.b64encode(b'fixture').decode()])
+        result = w.import_credentials(w.CredentialImport(format='six_segment', content=content), self.db, self.user)['data']
+        account = self.db.get(m.AccountPool, result['ids'][0])
+        self.assertFalse(account.session_enabled)
+        self.assertEqual(account.nurture_stage, 'none')
+        self.assertIn(management.get_account_row(account.id, self.db)['connection_state'], ('pending_adapter', 'offline'))
+        with self.assertRaises(m.HTTPException):
+            management.nurture_account(account.id, management.NurtureAction(action='start'), self.db, self.user)
+        with self.assertRaises(m.HTTPException):
+            w.import_credentials(w.CredentialImport(format='six_segment', content=content), self.db, self.user)
+        management.delete_account(account.id, self.db, self.user)
+        self.assertFalse(self.db.query(w.ImportedCredential).filter_by(account_id=account.id).first())
+
+    def test_full_params_parser(self):
+        key = base64.b64encode(bytes(32)).decode()
+        item = dict(jid='12345678981', registrationID=840417454, signPreKeyID=0,
+                    phoneUUID='1AF6328D-3870-4124-ACC1-9DEB993F766C', deviceUUID='d55a6a02-8346-a1b0-005b-a2df5ec8a9b0',
+                    osVersion='11', manufacturer='fixture', device='fixture', whatsappVersion='fixture',
+                    signPreKeySignature=base64.b64encode(bytes(64)).decode())
+        for name in ('identityPublicKey', 'identityPrivateKey', 'clientStaticPublicKey', 'clientStaticPrivateKey', 'signPreKeyPublicKey', 'signPreKeyPrivateKey'):
+            item[name] = key
+        self.assertEqual(w.parse_credentials('full_params', json.dumps(item))[0][0], item['jid'])
+        self.assertEqual(len(w.parse_credentials('full_params', json.dumps(item)+'\n'+json.dumps(dict(item,jid='12345678982')))), 2)
+        with self.assertRaises(m.HTTPException): w.parse_credentials('full_params', json.dumps([item,item]))
+        item['identityPrivateKey'] = 'invalid'
+        with self.assertRaises(m.HTTPException): w.parse_credentials('full_params', json.dumps(item))
+
     def setUp(self):
         self.db = m.SessionLocal(info={'tenant_id': 1})
         self.user = self.db.query(m.User).first()
